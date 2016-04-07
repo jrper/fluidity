@@ -2023,6 +2023,18 @@ a horizontal vector living on the specified surface.</a:documentation>
       </element>
     </element>
   </define>
+  <define name="bedload_flux_algorithm">
+    <element name="algorithm">
+      <a:documentation>Algorithm calculates the bed-load flux from different bed-load transport models.      </a:documentation>
+      <attribute name="name">
+        <value>bedload_flux</value>
+      </attribute>
+      <attribute name="material_phase_support">
+        <value>single</value>
+      </attribute>
+      <ref name="vector_source_field"/>
+    </element>
+  </define>
   <define name="scalar_diagnostic_algorithms">
     <ref name="universal_numbering_diagnostic_algorithm"/>
   </define>
@@ -2202,6 +2214,9 @@ a horizontal vector living on the specified surface.</a:documentation>
   </define>
   <define name="vector_diagnostic_algorithms" combine="choice">
     <ref name="vector_python_diagnostic_algorithm"/>
+  </define>
+  <define name="vector_diagnostic_algorithms" combine="choice">
+    <ref name="bedload_flux_algorithm"/>
   </define>
   <define name="tensor_diagnostic_algorithms">
     <ref name="tensor_copy_algorithm"/>

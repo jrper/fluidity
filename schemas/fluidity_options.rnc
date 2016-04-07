@@ -1907,6 +1907,17 @@ sediment =
                      diagnostic_scalar_field
                   }
                }?,
+               ## Sediment bedload flux diagnostic.
+               ##
+               ## The units are in volume flux of sediment per unit width.
+               element vector_field {
+                  attribute rank { "1" },
+                  attribute name { "BedloadFlux" },
+                  ## Field type
+                  element diagnostic {
+                     diagnostic_vector_field
+                  }
+               }?,              
                ## This is the unhindered sinking velocity of the sediment particles. 
                ## 
                ## With the sinking velocity field set to diagnostic, this field is used, along with the sediment 
