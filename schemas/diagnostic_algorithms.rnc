@@ -1524,7 +1524,18 @@ bedload_flux_algorithm =
       element algorithm {
          attribute name { "bedload_flux" },
          attribute material_phase_support { "single" },
-         vector_source_field         
+         #vector_source_field
+         element transport_model {            
+            element meyer_peter_muller {
+               empty
+            }|            
+            element nielsen {    
+               empty
+            }|
+            element van_rijn {    
+               empty            
+	    }
+         }
          }      
    )   
 

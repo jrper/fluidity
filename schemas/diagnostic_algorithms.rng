@@ -2032,7 +2032,20 @@ a horizontal vector living on the specified surface.</a:documentation>
       <attribute name="material_phase_support">
         <value>single</value>
       </attribute>
-      <ref name="vector_source_field"/>
+      <!-- vector_source_field -->
+      <element name="transport_model">
+        <choice>
+          <element name="meyer_peter_muller">
+            <empty/>
+          </element>
+          <element name="nielsen">
+            <empty/>
+          </element>
+          <element name="van_rijn">
+            <empty/>
+          </element>
+        </choice>
+      </element>
     </element>
   </define>
   <define name="scalar_diagnostic_algorithms">

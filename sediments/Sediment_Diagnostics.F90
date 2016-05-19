@@ -779,6 +779,6 @@ contains
 
     call addto(volume_fraction_surface, ele, volume_fraction)
     
-  end subroutine calculate_sediment_active_layer_element_volume_fractions
-
+  end subroutine calculate_sediment_active_layer_element_volume_fractions 
+  
 end module sediment_diagnostics

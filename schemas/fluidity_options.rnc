@@ -1913,9 +1913,17 @@ sediment =
                element vector_field {
                   attribute rank { "1" },
                   attribute name { "BedloadFlux" },
+                  ## Surface ids over which to calculate the bedload:
+                  ##element surface_ids {
+                  #   integer_vector
+                  #},
                   ## Field type
                   element diagnostic {
-                     diagnostic_vector_field
+                   internal_algorithm,
+                   #coordinate_mesh_choice,
+                   attribute name { "bedload_flux" },
+		   attribute material_phase_support { "single" },                   
+                   diagnostic_vector_field_bedload_flux                  
                   }
                }?,              
                ## This is the unhindered sinking velocity of the sediment particles. 
@@ -2466,6 +2474,27 @@ diagnostic_vector_field_bed_shear_stress =
       adaptivity_options_vector_field
    )
 
+diagnostic_vector_field_bedload_flux =
+   (      
+      (
+         ## Three Bed-Load transport models for calculation of bed-load flux are available:
+         element transport_model {            
+            element meyer_peter_muller {
+               empty
+            }|            
+            element nielsen {    
+               empty
+            }|
+            element van_rijn {    
+               empty            
+	    }
+         }
+      ),
+      diagnostic_output_options,
+      diagnostic_vector_stat_options,
+      diagnostic_detector_options,
+      adaptivity_options_vector_field
+   )   
 
 # Default child of diagnostic tensor field
 # Currently, this is empty, but in future this might include

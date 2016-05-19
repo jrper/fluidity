@@ -2680,8 +2680,22 @@ The units are in volume flux of sediment per unit width.</a:documentation>
                   <value>BedloadFlux</value>
                 </attribute>
                 <element name="diagnostic">
+                  <a:documentation>Surface ids over which to calculate the bedload:
+element surface_ids {</a:documentation>
+                  <!--
+                      integer_vector
+                    },
+                  -->
                   <a:documentation>Field type</a:documentation>
-                  <ref name="diagnostic_vector_field"/>
+                  <ref name="internal_algorithm"/>
+                  <!-- coordinate_mesh_choice, -->
+                  <attribute name="name">
+                    <value>bedload_flux</value>
+                  </attribute>
+                  <attribute name="material_phase_support">
+                    <value>single</value>
+                  </attribute>
+                  <ref name="diagnostic_vector_field_bedload_flux"/>
                 </element>
               </element>
             </optional>
@@ -3343,6 +3357,26 @@ This is calculated at all boundaries</a:documentation>
           <a:documentation>nu * (grad(u) + grad(u).T)
 This uses the velocity gradient at the boundaries to calculate the 
 bed shear stress. Valid for non parameterised velocity boundaries.</a:documentation>
+          <empty/>
+        </element>
+      </choice>
+    </element>
+    <ref name="diagnostic_output_options"/>
+    <ref name="diagnostic_vector_stat_options"/>
+    <ref name="diagnostic_detector_options"/>
+    <ref name="adaptivity_options_vector_field"/>
+  </define>
+  <define name="diagnostic_vector_field_bedload_flux">
+    <element name="transport_model">
+      <a:documentation>Three Bed-Load transport models for calculation of bed-load flux are available:</a:documentation>
+      <choice>
+        <element name="meyer_peter_muller">
+          <empty/>
+        </element>
+        <element name="nielsen">
+          <empty/>
+        </element>
+        <element name="van_rijn">
           <empty/>
         </element>
       </choice>
