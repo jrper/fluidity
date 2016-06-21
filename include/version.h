@@ -1,0 +1,4 @@
+#ifndef _FLUIDITY_VERSION_H
+#define _FLUIDITY_VERSION_H
+#define __FLUIDITY_VERSION__ "jmn114/bedload:5dfe23c50be9b96d059cadf78737fb445810d12a"
+#endif /* _FLUIDITY_VERSION_H */
