@@ -665,7 +665,7 @@ R = libspud.get_option("/material_phase::water/sediment/scalar_field::Scour/prog
 g = libspud.get_option("/physical_parameters/gravity/magnitude")
 
 rho = state.scalar_fields["Density"]
-bss = state.vector_fields["BedShearStress"]
+bss = state.vector_fields["BedShearStressAvg"]
 X = state.vector_fields["Coordinate"]
 
 field.val[:,:] = 0.0
@@ -724,6 +724,27 @@ for i in range(field.node_count):
   field.val[i,0] /= widths[i]</string_value>
         </algorithm>
         <mesh name="CoordinateMesh"/>
+        <output/>
+        <stat>
+          <include_in_stat/>
+        </stat>
+        <convergence>
+          <include_in_convergence/>
+        </convergence>
+        <detectors>
+          <include_in_detectors/>
+        </detectors>
+        <steady_state>
+          <include_in_steady_state/>
+        </steady_state>
+      </diagnostic>
+    </vector_field>
+    <vector_field name="BedShearStressAvg" rank="1">
+      <diagnostic>
+        <algorithm source_field_type="vector" material_phase_support="single" name="time_averaged_vector" source_field_name="BedShearStress">
+          <absolute_values/>
+        </algorithm>
+        <mesh name="VelocityMesh"/>
         <output/>
         <stat>
           <include_in_stat/>
