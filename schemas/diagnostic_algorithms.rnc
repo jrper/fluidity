@@ -1484,6 +1484,25 @@ vector_time_averaged_algorithm =
          }?
       }
    )
+   
+vector_filter_time_averaged_algorithm =
+   (
+      ## Algorithm for time averaging vector fields with high-pass filter (exponential decay).
+      ## This field needs to be interpolated between adapts.
+      element algorithm {
+         attribute name { "filter_time_averaged_vector" },
+         attribute material_phase_support { "single" },
+         vector_source_field,         
+         ## Relaxation time.
+         element tau {
+            real
+         }?,
+         ## If enabled, the average of the absolute value is taken
+         element absolute_values {
+            comment
+         }?
+      }
+   )
 
 vector_scalar_time_averaged_algorithm =
    (
@@ -1523,7 +1542,10 @@ bedload_flux_algorithm =
       element algorithm {
          attribute name { "bedload_flux" },
          attribute material_phase_support { "single" },
-         #vector_source_field
+         #vector_source_field,
+         element surface_ids {
+            integer_vector
+         },
          element transport_model {            
             element meyer_peter_muller {
                empty
@@ -1581,6 +1603,7 @@ scalar_diagnostic_algorithms |= scalar_python_diagnostic_algorithm
 scalar_diagnostic_algorithms |= internal_algorithm
 
 vector_diagnostic_algorithms = vector_time_averaged_algorithm
+vector_diagnostic_algorithms |= vector_filter_time_averaged_algorithm
 vector_diagnostic_algorithms |= vector_temporalmax_algorithm
 vector_diagnostic_algorithms |= vector_sum_algorithm
 vector_diagnostic_algorithms |= vector_scalar_time_averaged_algorithm

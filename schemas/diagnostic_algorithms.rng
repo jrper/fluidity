@@ -1991,6 +1991,31 @@ This field needs to be interpolated between adapts.</a:documentation>
       </optional>
     </element>
   </define>
+  <define name="vector_filter_time_averaged_algorithm">
+    <element name="algorithm">
+      <a:documentation>Algorithm for time averaging vector fields with high-pass filter (exponential decay).
+This field needs to be interpolated between adapts.</a:documentation>
+      <attribute name="name">
+        <value>filter_time_averaged_vector</value>
+      </attribute>
+      <attribute name="material_phase_support">
+        <value>single</value>
+      </attribute>
+      <ref name="vector_source_field"/>
+      <optional>
+        <element name="tau">
+          <a:documentation>Relaxation time.</a:documentation>
+          <ref name="real"/>
+        </element>
+      </optional>
+      <optional>
+        <element name="absolute_values">
+          <a:documentation>If enabled, the average of the absolute value is taken</a:documentation>
+          <ref name="comment"/>
+        </element>
+      </optional>
+    </element>
+  </define>
   <define name="vector_scalar_time_averaged_algorithm">
     <element name="algorithm">
       <a:documentation>Algorithm for time averaging vector times scalar fields.
@@ -2037,7 +2062,10 @@ a horizontal vector living on the specified surface.</a:documentation>
       <attribute name="material_phase_support">
         <value>single</value>
       </attribute>
-      <!-- vector_source_field -->
+      <!-- vector_source_field, -->
+      <element name="surface_ids">
+        <ref name="integer_vector"/>
+      </element>
       <element name="transport_model">
         <choice>
           <element name="meyer_peter_muller">
@@ -2178,6 +2206,9 @@ a horizontal vector living on the specified surface.</a:documentation>
   </define>
   <define name="vector_diagnostic_algorithms">
     <ref name="vector_time_averaged_algorithm"/>
+  </define>
+  <define name="vector_diagnostic_algorithms" combine="choice">
+    <ref name="vector_filter_time_averaged_algorithm"/>
   </define>
   <define name="vector_diagnostic_algorithms" combine="choice">
     <ref name="vector_temporalmax_algorithm"/>

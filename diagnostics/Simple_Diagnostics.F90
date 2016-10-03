@@ -53,7 +53,7 @@ module simple_diagnostics
   private
 
   public :: calculate_temporalmax_scalar, calculate_temporalmax_vector, calculate_temporalmin, calculate_l2norm, &
-            calculate_time_averaged_scalar, calculate_time_averaged_vector, &
+            calculate_time_averaged_scalar, calculate_time_averaged_vector, calculate_filter_time_averaged_vector, &
             calculate_time_averaged_scalar_squared, &
             calculate_time_averaged_vector_times_scalar, calculate_period_averaged_scalar
 
@@ -313,6 +313,41 @@ contains
       call set(v_field, source_field)
     end if
   end subroutine calculate_time_averaged_vector
+
+  subroutine calculate_filter_time_averaged_vector(state, v_field)
+    type(state_type), intent(in) :: state
+    type(vector_field), intent(inout) :: v_field
+
+    type(vector_field), pointer :: source_field
+    real :: a, b, spin_up_time, current_time, dt, tau
+    integer :: stat
+    logical :: absolute_vals
+
+    if (timestep==0) then
+      call initialise_diagnostic_from_checkpoint(v_field)
+      return
+    end if
+
+    call get_option("/timestepping/current_time", current_time)
+    call get_option("/timestepping/timestep", dt)
+
+    absolute_vals=have_option(trim(v_field%option_path)//"/diagnostic/algorithm/absolute_values")
+    !call get_option(trim(v_field%option_path)//"/diagnostic/algorithm/spin_up_time", spin_up_time, stat)
+    call get_option(trim(v_field%option_path)//"/diagnostic/algorithm/tau", tau, stat)
+    if (stat /=0) spin_up_time=0.
+    source_field => vector_source_field(state, v_field)
+    if(absolute_vals) source_field%val = abs(source_field%val)
+
+    if (current_time>tau) then
+      !a = (current_time-spin_up_time-dt)/(current_time-spin_up_time); b = dt/(current_time-spin_up_time)
+      a = exp(-dt/tau)
+      ! v_field = a*v_field + (1-a)*source_field
+      call scale(v_field, a)
+      call addto(v_field, source_field, (1-a))
+    else
+      call set(v_field, source_field)
+    end if
+  end subroutine calculate_filter_time_averaged_vector
 
   subroutine calculate_time_averaged_scalar_squared(state, s_field)
     type(state_type), intent(in) :: state
