@@ -35,11 +35,11 @@ module bedload_diagnostics
   use elements
   use spud
   use fields
-  use state_module
-  use field_options
-  use boundary_conditions
-  use diagnostic_source_fields
-  use sediment
+  use state_module, only: state_type, extract_vector_field
+  use field_options, only: complete_field_path
+  !use boundary_conditions
+  !use diagnostic_source_fields
+  use sediment, only: get_n_sediment_fields, get_sediment_item
   !use surface_integrals
   
   implicit none 
