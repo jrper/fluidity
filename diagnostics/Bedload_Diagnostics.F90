@@ -75,7 +75,8 @@ subroutine calculate_bedload_flux(state, v_field)
       !real, dimension(ele_loc(bedload_flux_surface, i_ele), ele_loc(bedload_flux_surface, i_ele)) :: invmass
       !real, dimension(ele_ngi(bedload_flux_surface, i_ele)) :: detwei         
                   
-      ewrite(1,*) "In calculate_sediment_bedload_flux"     
+      ewrite(1,*) "In calculate_sediment_bedload_flux"
+      ewrite(2,*) 'Probando ewrite'
       
       ! obtain some required model variables
       n_sediment_fields = get_n_sediment_fields()
@@ -114,7 +115,9 @@ subroutine calculate_bedload_flux(state, v_field)
         ! calculate Meyer-Peter and Muller model
         if (have_option(trim(base_path)//"/meyer_peter_muller")) then
 
-          call zero(v_field)        
+          call zero(v_field)
+
+          ewrite(2,*) 'EN MPM CUANTO ES EL BSS EN EL NODO 1:', node_val(bss,1)
       
           sndim = mesh_dim(bss)
           snloc = face_loc(bss, 1)
@@ -127,7 +130,8 @@ subroutine calculate_bedload_flux(state, v_field)
             do i = 1,snloc      
               t_crit = 0.00
               globnod = faceglobalnodes(i)
-              q_star = 8.0 * (((norm2(node_val(bss, globnod)) - t_crit) / (density * R * g * d)) ** 1.5) * (node_val(bss, globnod) / norm2(node_val(bss, globnod)))               
+              !q_star = 8.0 * (((norm2(node_val(bss, globnod)) - t_crit) / (density * R * g * d)) ** 1.5) * (node_val(bss, globnod) / norm2(node_val(bss, globnod)))
+              q_star = 8.0 * ((node_val(bss, globnod) - t_crit / (density * R * g * d))) * sqrt((norm2(node_val(bss, globnod)) - t_crit / (density * R * g * d)))
               call set(v_field, globnod, q_star * sqrt(R * g * (d ** 3)))      
             end do
           end do
@@ -141,6 +145,8 @@ subroutine calculate_bedload_flux(state, v_field)
         if (have_option(trim(base_path)//"/nielsen")) then
 
           call zero(v_field)        
+
+          ewrite(2,*) 'EN NIELSEN CUANTO ES EL BSS EN EL NODO 1:', node_val(bss,1)
 
           sndim = mesh_dim(bss)
           snloc = face_loc(bss, 1)
