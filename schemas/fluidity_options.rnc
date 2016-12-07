@@ -2464,6 +2464,11 @@ diagnostic_vector_field_bed_shear_stress =
             element drag_coefficient {
                real
             }|
+            ## density*friction_velocity/yPlus*u 
+            ## This is calculated at all boundaries
+            element friction_velocity {
+               empty
+            }|
             ## nu * (grad(u) + grad(u).T)
             ## This uses the velocity gradient at the boundaries to calculate the 
             ## bed shear stress. Valid for non parameterised velocity boundaries.
@@ -2799,6 +2804,13 @@ velocity_boundary_conditions =
               ##
               ## This means that the drag coefficient has units of momentum.
               element linear_drag {
+                empty
+              }|
+              ## Wall function for k_epsilon RANS model.
+              ## Shear stress at the wall is set following
+              ## the methodology outlined in Kuzmin and Mierka (2006).
+              ## Constant not needed! Set to zero (or whatever).
+              element log_law_friction_velocity {
                 empty
               }
             )

@@ -60,7 +60,7 @@ module k_epsilon
   logical, save  :: low_Re = .false.                     
 
   public :: keps_advdif_diagnostics, keps_momentum_diagnostics, keps_bcs, &
-       & k_epsilon_check_options, tensor_inner_product
+       & k_epsilon_check_options, tensor_inner_product, keps_bound
 
   ! Outline:
   !  - call diagnostics to obtain source terms and calculate eddy viscosity
@@ -78,6 +78,7 @@ subroutine keps_advdif_diagnostics(state)
   call keps_diffusion(state)
   call keps_tracer_diffusion(state)
   call keps_calculate_rhs(state)
+!  call keps_bound(state)
 
 end subroutine keps_advdif_diagnostics
 
@@ -89,6 +90,27 @@ subroutine keps_momentum_diagnostics(state)
   call keps_eddyvisc(state, advdif=.false.)
 
 end subroutine keps_momentum_diagnostics
+
+!--------------------------------------------------------------------------------!
+subroutine keps_bound(state)
+  type(state_type), intent(in) :: state
+  type(scalar_field), pointer  :: k, eps
+  real                         :: k_val, eps_val
+  integer                      :: node
+
+  k   => extract_scalar_field(state, "TurbulentKineticEnergy")
+  eps => extract_scalar_field(state, "TurbulentDissipation")
+
+  ewrite(1,*) 'AMIN: Are we here yet?', node_val(k,1)
+  do node = 1, node_count(k)
+    k_val   = node_val(k,node)
+    eps_val = node_val(eps,node)
+    call set(k  , node, max(k_val  , fields_min))
+    call set(eps, node, max(eps_val, fields_min))
+  end do
+  ewrite(1,*) 'AMIN: Are we here yet?', node_val(k,1)
+end subroutine keps_bound
+!--------------------------------------------------------------------------------!
 
 !--------------------------------------------------------------------------------!
 
@@ -220,6 +242,14 @@ subroutine keps_calculate_rhs(state)
   integer, dimension(:,:), allocatable :: bc_type    
   logical :: dg_velocity, dg_keps
 
+  integer                        :: wnode, nbcs, ii, j
+  real                           :: Pk_val, u_tau_val, mag_u_val, yPlus, nut_val, kappa
+  character(len=FIELD_NAME_LEN)  :: bctype, bc_name, wall_fns
+  character(len=OPTION_PATH_LEN) :: bc_path, bc_path_i
+  integer, dimension(:), pointer :: surface_node_list
+  type(scalar_field), pointer    :: field1, field2
+  type(tensor_field), pointer    :: bg_visc
+
   option_path = trim(state%option_path)//'/subgridscale_parameterisations/k-epsilon/'
 
   if (.not. have_option(trim(option_path))) then 
@@ -347,6 +377,66 @@ subroutine keps_calculate_rhs(state)
            call solve_cg_inv_mass(state, src_abs_terms(term), lump_mass, option_path)           
         end do
      end if
+
+     !-----------------------------------------------------------------------------------
+     ! high Re wall functions: modify production term P_k on the boundary!
+
+     yPlus = 11.06 !using fixed yPlus value atm
+     kappa = 0.41
+
+     if(i==1) then
+        field1 => extract_scalar_field(state, "TurbulentKineticEnergy")
+        field2 => null()
+     else
+        field1 => extract_scalar_field(state, "TurbulentDissipation")
+        field2 => extract_scalar_field(state, "TurbulentKineticEnergy")
+     end if
+
+     bg_visc => extract_tensor_field(state, "BackgroundViscosity")
+
+     bc_path=trim(field1%option_path)//'/prognostic/boundary_conditions'
+     nbcs=option_count(trim(bc_path))
+
+     ! Loop over boundary conditions for fields(i): (i.e. k then epsilon)
+     boundary_conditions: do ii=0, nbcs-1
+
+        bc_path_i=trim(bc_path)//"["//int2str(ii)//"]"
+
+        ! Get name and type of boundary condition
+        call get_option(trim(bc_path_i)//"/name", bc_name)
+        call get_option(trim(bc_path_i)//"/type[0]/name", bctype)
+        call get_option(trim(bc_path_i)//"/type::k_epsilon/", wall_fns, stat=stat)
+
+        ! Do we have high Re wall functions?
+        if (trim(bctype)=="k_epsilon" .and. wall_fns=="high_Re") then
+
+           call get_boundary_condition(field1, ii+1, type=bctype, surface_node_list=surface_node_list)
+
+           do j=1, size(surface_node_list)
+              wnode = surface_node_list(j)
+
+              nut_val   = kappa*yPlus*node_val(bg_visc,1,1,wnode)
+              mag_u_val = sqrt(sum(node_val(u,wnode)**2, dim=1))
+              !mag_u_val = sqrt(node_val(u,1,wnode)**2 + node_val(u,2,wnode)**2 + node_val(u,3,wnode)**2)
+
+              if (i==1) then
+                 u_tau_val = max( sqrt(node_val(field1,wnode))*0.09**0.25, mag_u_val/yPlus )
+                 Pk_val    = ((u_tau_val**3)*mag_u_val)/(nut_val*yPlus)
+              elseif (i==2) then
+                 u_tau_val = max( sqrt(node_val(field2,wnode))*0.09**0.25, mag_u_val/yPlus )
+                 Pk_val    = ((u_tau_val**3)*mag_u_val)/(nut_val*yPlus) &
+                           * (node_val(field1,wnode)/node_val(field2,wnode))
+!  ewrite(1,*) 'AMIN: Are we here yet?', node_val(src_abs_terms(1),wnode), Pk_val
+              end if 
+
+              !call set(src, wnode, Pk_val)
+!              call set(src_abs_terms(1), wnode, Pk_val)
+!              call set(src_abs_terms(1), wnode, 0.0)
+              !src%val(wnode) = Pk_val
+!  ewrite(1,*) 'AMIN: Are we here yet?', node_val(src_abs_terms(1),wnode), Pk_val
+           end do
+        end if
+     end do boundary_conditions
      !-----------------------------------------------------------------------------------
 
      ! Source disabling for debugging purposes
@@ -631,6 +721,14 @@ subroutine keps_eddyvisc(state, advdif)
   logical                          :: lump_mass, have_visc = .true.
   character(len=FIELD_NAME_LEN)    :: equation_type
 
+  integer                        :: wnode, nbcs, ii, jj, sele, snloc, jjj
+  real                           :: yPlus, nut_val, kappa
+  character(len=FIELD_NAME_LEN)  :: bctype, bc_name, wall_fns
+  character(len=OPTION_PATH_LEN) :: bc_path, bc_path_i
+  integer, dimension(:), pointer :: surface_node_list, surface_element_list
+  type(scalar_field), pointer    :: fieldk
+  integer, dimension(:), allocatable :: faceglobalnodes
+
   option_path = trim(state%option_path)//'/subgridscale_parameterisations/k-epsilon/'
 
   if (.not. have_option(trim(option_path))) then 
@@ -714,6 +812,53 @@ subroutine keps_eddyvisc(state, advdif)
   do ele = 1, ele_count(scalar_eddy_visc)
      call keps_eddyvisc_ele(ele, X, kk, eps, scalar_eddy_visc, f_mu, density, ev_rhs)
   end do
+
+  !-----------------------------------------------------------------------------------
+  ! Update eddy viscosity at the wall if wall function is selected:
+
+     yPlus = 11.06 !using fixed yPlus value atm
+     kappa = 0.41
+     fieldk => extract_scalar_field(state, "TurbulentKineticEnergy")
+
+     snloc=face_loc(u,1)
+     allocate(faceglobalnodes(1:snloc))
+
+     bc_path=trim(fieldk%option_path)//'/prognostic/boundary_conditions' !!! FIX THIS !!!
+     nbcs=option_count(trim(bc_path))
+
+     ! Loop over boundary conditions for fields(i): (i.e. k then epsilon)
+     do ii=0, nbcs-1
+
+        bc_path_i=trim(bc_path)//"["//int2str(ii)//"]"
+
+        ! Get name and type of boundary condition
+        call get_option(trim(bc_path_i)//"/name", bc_name)
+        call get_option(trim(bc_path_i)//"/type[0]/name", bctype)
+        call get_option(trim(bc_path_i)//"/type::k_epsilon/", wall_fns, stat=stat)
+
+        ! Do we have high Re wall functions?
+        if (trim(bctype)=="k_epsilon" .and. wall_fns=="high_Re") then
+
+           call get_boundary_condition(fieldk, ii+1, type=bctype, surface_element_list=surface_element_list)
+
+           do jj=1, size(surface_element_list) !!! j is used again later!!! => use jj
+              sele=surface_element_list(jj)
+
+              ! nodes_ids for the field on this surface element
+              faceglobalnodes=face_global_nodes(scalar_eddy_visc, sele)
+
+              do jjj=1, size(faceglobalnodes)
+                   nut_val   = kappa*yPlus*node_val(bg_visc,1,1,faceglobalnodes(jjj))
+                   call set(scalar_eddy_visc, faceglobalnodes(jjj), nut_val)
+              end do
+
+              !wnode = surface_node_list(jj)
+              !nut_val   = kappa*yPlus*node_val(bg_visc,1,1,wnode)
+              !call set(scalar_eddy_visc, wnode, nut_val)
+           end do
+        end if
+     end do
+   !-----------------------------------------------------------------------------------
 
   ! For non-DG we apply inverse mass globally
   if(continuity(scalar_eddy_visc)>=0) then
@@ -1037,10 +1182,16 @@ subroutine keps_bcs(state)
   type(mesh_type), pointer                   :: surface_mesh
   integer                                    :: i, j, sele, index, nbcs, stat
   integer, dimension(:), pointer             :: surface_elements, surface_node_list
+  integer, allocatable, dimension(:)         :: vol_nodes
   character(len=FIELD_NAME_LEN)              :: bc_type, bc_name, wall_fns
   character(len=OPTION_PATH_LEN)             :: bc_path, bc_path_i, option_path 
   real                                       :: c_mu
   character(len=FIELD_NAME_LEN)              :: equation_type
+
+  integer, dimension(:), pointer             :: surface_element_list
+  real                                       :: yPlus, kappa, u_tau_val, nut_val, eps_bc_val, y_val
+  real, dimension(:), allocatable            :: friction_velocity
+  integer                                    :: sngi, surface_node, ele, iloc, inode, vnode
 
   option_path = trim(state%option_path)//'/subgridscale_parameterisations/k-epsilon/'
 
@@ -1075,6 +1226,12 @@ subroutine keps_bcs(state)
 
   call get_option(trim(option_path)//"C_mu", c_mu, default = 0.09)
 
+  sngi=face_ngi(u, 1)
+  allocate(friction_velocity(1:sngi))
+
+  yPlus = 11.06 !using fixed yPlus value atm
+  kappa = 0.41
+
   field_loop: do index=1,2
 
      if(index==1) then
@@ -1103,6 +1260,59 @@ subroutine keps_bcs(state)
            ! lowRe BC's are just zero Dirichlet or Neumann - damping functions get calculated in 
            ! keps_calc_rhs
            low_Re = .true.
+        elseif (trim(bc_type)=="k_epsilon" .and. wall_fns=="high_Re") then
+
+           if(index==2) then
+
+           call get_boundary_condition(field1, i+1, surface_element_list=surface_element_list)
+
+!           do j=1, size(surface_node_list)
+!              surface_node = surface_node_list(j)
+
+!              ! Calculate y = yPlus*nu_bg / c_mu**0.25*sqrt(k)
+!              y_val = ( yPlus*node_val(bg_visc,1,1,surface_node) )/( (c_mu**0.25)*sqrt(node_val(field2,surface_node)) )
+
+!              ! Calculate eps_wall = c_mu**0.75*k**1.5 / kappa*y
+!              eps_bc_val = ( c_mu**0.75*node_val(field2,surface_node)**1.5 )/( kappa*y_val )
+!!              eps_bc_val = ( c_mu*node_val(field2,surface_node)**2 )/( kappa*yPlus*node_val(bg_visc,1,1,surface_node) ) 
+
+!              call set(field2, surface_node, eps_bc_val)
+!           end do
+
+              allocate(vol_nodes(face_loc(field2,1)))
+
+!!!           if(index==2) then ! field1 is epsilon and field2 is k
+              ! pull out the bc value field:
+              surface_field => extract_surface_field(field1, bc_name, 'value')
+
+              ! set epsilon neumann bc: n.grad(epsilon) = (kappa*u_tau)/nut_wall * epsilon_wall
+              do ele=1, ele_count(surface_field)
+                  ! Establish local node lists for surface_field
+                  surface_elements => ele_nodes(surface_field,ele)
+                  vol_nodes = face_global_nodes(field2,surface_element_list(ele))
+                  ! Loop the nodes
+                  do iloc=1, size(surface_elements)
+                     inode = surface_elements(iloc) !get the surface node number
+                     vnode = vol_nodes(iloc)        !get the volume node number
+
+!                     u_tau_val  = sqrt(node_val(field2,inode)) * c_mu**0.25
+!                     eps_bc_val = ( c_mu*node_val(field2,vnode)**2 )/( kappa*yPlus*node_val(bg_visc,1,1,1) ) 
+!                     nut_val    = kappa*yPlus*node_val(bg_visc,1,1,inode)
+!                     eps_bc_val = (kappa*u_tau_val/nut_val) * node_val(field1,inode)
+
+                     if(node_val(scalar_eddy_visc,vnode) .le. 1.0e-16) then
+                        eps_bc_val = 0.0
+                     else
+                        eps_bc_val = (kappa*u_tau_val/node_val(scalar_eddy_visc,vnode)) * node_val(field1,vnode)
+                     endif
+
+!                     call set(surface_field, inode, eps_bc_val)
+                     call set(surface_field, vnode, eps_bc_val)
+                     !surface_field%val(inode) = eps_bc_val
+                  end do
+              end do
+
+           end if
         end if
      end do boundary_conditions
   end do field_loop
