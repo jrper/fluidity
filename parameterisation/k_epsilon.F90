@@ -242,8 +242,8 @@ subroutine keps_calculate_rhs(state)
   integer, dimension(:,:), allocatable :: bc_type    
   logical :: dg_velocity, dg_keps
 
-  integer                        :: wnode, nbcs, ii, j
-  real                           :: Pk_val, u_tau_val, mag_u_val, yPlus, nut_val, kappa
+  integer                        :: wnode, nbcs, ii, j, jj
+  real                           :: Pk_val, u_tau_val, mag_u_val, yPlus, nut_val, kappa, Abs_val
   character(len=FIELD_NAME_LEN)  :: bctype, bc_name, wall_fns
   character(len=OPTION_PATH_LEN) :: bc_path, bc_path_i
   integer, dimension(:), pointer :: surface_node_list
@@ -381,7 +381,8 @@ subroutine keps_calculate_rhs(state)
      !-----------------------------------------------------------------------------------
      ! high Re wall functions: modify production term P_k on the boundary!
 
-     yPlus = 11.06 !using fixed yPlus value atm
+     !A! yPlus = 300.0 !!! 11.06 !using fixed yPlus value atm
+     call get_option(trim(option_path)//'/yPlus', yPlus, default = 11.06) !A! grab yPlus from diamond
      kappa = 0.41
 
      if(i==1) then
@@ -417,26 +418,32 @@ subroutine keps_calculate_rhs(state)
 
               nut_val   = kappa*yPlus*node_val(bg_visc,1,1,wnode)
               mag_u_val = sqrt(sum(node_val(u,wnode)**2, dim=1))
-              !mag_u_val = sqrt(node_val(u,1,wnode)**2 + node_val(u,2,wnode)**2 + node_val(u,3,wnode)**2)
 
               if (i==1) then
-                 u_tau_val = max( sqrt(node_val(field1,wnode))*0.09**0.25, mag_u_val/yPlus )
-                 Pk_val    = ((u_tau_val**3)*mag_u_val)/(nut_val*yPlus)
+!                 u_tau_val = max( sqrt(node_val(field1,wnode))*0.09**0.25, mag_u_val/yPlus )
+!                 Pk_val    = ((u_tau_val**3)*mag_u_val)/(nut_val*yPlus)
+                 Pk_val    = 0.0
+                 Abs_val   = 0.0
               elseif (i==2) then
-                 u_tau_val = max( sqrt(node_val(field2,wnode))*0.09**0.25, mag_u_val/yPlus )
-                 Pk_val    = ((u_tau_val**3)*mag_u_val)/(nut_val*yPlus) &
-                           * (node_val(field1,wnode)/node_val(field2,wnode))
-!  ewrite(1,*) 'AMIN: Are we here yet?', node_val(src_abs_terms(1),wnode), Pk_val
+!                 u_tau_val = max( sqrt(node_val(field2,wnode))*0.09**0.25, mag_u_val/yPlus )
+!                 Pk_val    = ((u_tau_val**3)*mag_u_val)/(nut_val*yPlus) &
+!                           * (node_val(field1,wnode)/node_val(field2,wnode))
+                 Pk_val    = 0.0
+                 Abs_val   = -(node_val(field1,wnode)**2.0)/(node_val(field2,wnode))*(c_eps_2-c_eps_1) !A! (eps**2/k)*(C1-C2)
               end if 
 
-              !call set(src, wnode, Pk_val)
-!              call set(src_abs_terms(1), wnode, Pk_val)
-!              call set(src_abs_terms(1), wnode, 0.0)
-              !src%val(wnode) = Pk_val
-!  ewrite(1,*) 'AMIN: Are we here yet?', node_val(src_abs_terms(1),wnode), Pk_val
+              call set(src_abs_terms(1), wnode, Pk_val)
+              call set(src_abs_terms(2), wnode, Abs_val)
+!if (i==2) then
+!ewrite(1,*) 'AMIN: Are we here yet?', Abs_val, node_val(field1,wnode), node_val(field2,wnode), c_eps_2, c_eps_1
+!end if
            end do
         end if
      end do boundary_conditions
+
+!     do jj = 1, node_count(src_abs_terms(1))
+!           ewrite(1,*) 'AMIN: Are we here yet?', node_val(src_abs_terms(1),jj), node_val(src_abs_terms(2),jj), node_val(x,1,jj), node_val(x,2,jj)
+!     end do
      !-----------------------------------------------------------------------------------
 
      ! Source disabling for debugging purposes
@@ -813,10 +820,23 @@ subroutine keps_eddyvisc(state, advdif)
      call keps_eddyvisc_ele(ele, X, kk, eps, scalar_eddy_visc, f_mu, density, ev_rhs)
   end do
 
+
+  ! For non-DG we apply inverse mass globally
+  if(continuity(scalar_eddy_visc)>=0) then
+     lump_mass = have_option(trim(option_path)//'mass_terms/lump_mass')
+     call solve_cg_inv_mass(state, ev_rhs, lump_mass, option_path)  
+  end if
+  
+  ! Allow for prescribed eddy-viscosity
+  if (.not. have_option(trim(option_path)//'/scalar_field::ScalarEddyViscosity/prescribed')) then
+     call set(scalar_eddy_visc, ev_rhs)
+  end if
+
   !-----------------------------------------------------------------------------------
   ! Update eddy viscosity at the wall if wall function is selected:
 
-     yPlus = 11.06 !using fixed yPlus value atm
+     !A! yPlus = 300.0 !!! 11.06 !using fixed yPlus value atm
+     call get_option(trim(option_path)//'/yPlus', yPlus, default = 11.06) !A! grab yPlus from diamond
      kappa = 0.41
      fieldk => extract_scalar_field(state, "TurbulentKineticEnergy")
 
@@ -848,28 +868,23 @@ subroutine keps_eddyvisc(state, advdif)
               faceglobalnodes=face_global_nodes(scalar_eddy_visc, sele)
 
               do jjj=1, size(faceglobalnodes)
+!ewrite(1,*) 'AMIN: Before:', sele, jjj, faceglobalnodes(jjj), node_val(scalar_eddy_visc,faceglobalnodes(jjj))
                    nut_val   = kappa*yPlus*node_val(bg_visc,1,1,faceglobalnodes(jjj))
-                   call set(scalar_eddy_visc, faceglobalnodes(jjj), nut_val)
+                   call set(scalar_eddy_visc, faceglobalnodes(jjj), nut_val) !AMIN
+!ewrite(1,*) 'AMIN: After :', sele, jjj, faceglobalnodes(jjj), node_val(scalar_eddy_visc,faceglobalnodes(jjj)), node_val(x,1,faceglobalnodes(jjj)), node_val(x,2,faceglobalnodes(jjj))
               end do
-
-              !wnode = surface_node_list(jj)
-              !nut_val   = kappa*yPlus*node_val(bg_visc,1,1,wnode)
-              !call set(scalar_eddy_visc, wnode, nut_val)
            end do
+
+!           call get_boundary_condition(fieldk, ii+1, type=bctype, surface_node_list=surface_node_list)
+!           do jj=1, size(surface_node_list)
+!              wnode = surface_node_list(jj)
+!              nut_val   = kappa*yPlus*node_val(bg_visc,1,1,wnode)
+!              call set(scalar_eddy_visc, wnode, nut_val)
+!           end do
+
         end if
      end do
-   !-----------------------------------------------------------------------------------
-
-  ! For non-DG we apply inverse mass globally
-  if(continuity(scalar_eddy_visc)>=0) then
-     lump_mass = have_option(trim(option_path)//'mass_terms/lump_mass')
-     call solve_cg_inv_mass(state, ev_rhs, lump_mass, option_path)  
-  end if
-  
-  ! Allow for prescribed eddy-viscosity
-  if (.not. have_option(trim(option_path)//'/scalar_field::ScalarEddyViscosity/prescribed')) then
-     call set(scalar_eddy_visc, ev_rhs)
-  end if
+  !-----------------------------------------------------------------------------------
 
   ! If VLES then scale by filter function
   filter => extract_scalar_field(state, 'VLESFilter', stat)
@@ -897,6 +912,9 @@ subroutine keps_eddyvisc(state, advdif)
      do i = 1, eddy_visc%dim(1)
         do j = 1, eddy_visc%dim(1)
            call set(eddy_visc, i, j, scalar_eddy_visc)
+!           do jj = 1, node_count(scalar_eddy_visc)
+!              ewrite(1,*) 'AMIN: Are we here yet?', node_val(eddy_visc,i,j,jj), node_val(x,1,jj), node_val(x,2,jj)
+!           end do
         end do
      end do
   end if
@@ -1229,7 +1247,8 @@ subroutine keps_bcs(state)
   sngi=face_ngi(u, 1)
   allocate(friction_velocity(1:sngi))
 
-  yPlus = 11.06 !using fixed yPlus value atm
+  !A! yPlus = 300.0 !!! 11.06 !using fixed yPlus value atm
+  call get_option(trim(option_path)//'/yPlus', yPlus, default = 11.06) !A! grab yPlus from diamond
   kappa = 0.41
 
   field_loop: do index=1,2
@@ -1262,7 +1281,7 @@ subroutine keps_bcs(state)
            low_Re = .true.
         elseif (trim(bc_type)=="k_epsilon" .and. wall_fns=="high_Re") then
 
-           if(index==2) then
+           if(index==2) then ! field1 is epsilon and field2 is k
 
            call get_boundary_condition(field1, i+1, surface_element_list=surface_element_list)
 
@@ -1281,7 +1300,6 @@ subroutine keps_bcs(state)
 
               allocate(vol_nodes(face_loc(field2,1)))
 
-!!!           if(index==2) then ! field1 is epsilon and field2 is k
               ! pull out the bc value field:
               surface_field => extract_surface_field(field1, bc_name, 'value')
 
@@ -1290,25 +1308,28 @@ subroutine keps_bcs(state)
                   ! Establish local node lists for surface_field
                   surface_elements => ele_nodes(surface_field,ele)
                   vol_nodes = face_global_nodes(field2,surface_element_list(ele))
+                  !vol_nodes = face_global_nodes(field2,ele)
                   ! Loop the nodes
                   do iloc=1, size(surface_elements)
                      inode = surface_elements(iloc) !get the surface node number
                      vnode = vol_nodes(iloc)        !get the volume node number
 
-!                     u_tau_val  = sqrt(node_val(field2,inode)) * c_mu**0.25
-!                     eps_bc_val = ( c_mu*node_val(field2,vnode)**2 )/( kappa*yPlus*node_val(bg_visc,1,1,1) ) 
-!                     nut_val    = kappa*yPlus*node_val(bg_visc,1,1,inode)
-!                     eps_bc_val = (kappa*u_tau_val/nut_val) * node_val(field1,inode)
+                     u_tau_val  = sqrt(node_val(field2,vnode)) * c_mu**0.25
+                     !u_tau_val  = max( sqrt(sum(node_val(u, vnode)**2, dim=1)) / yPlus , u_tau_val)
 
                      if(node_val(scalar_eddy_visc,vnode) .le. 1.0e-16) then
                         eps_bc_val = 0.0
                      else
-                        eps_bc_val = (kappa*u_tau_val/node_val(scalar_eddy_visc,vnode)) * node_val(field1,vnode)
+                        !eps_bc_val = ((kappa*u_tau_val)/node_val(scalar_eddy_visc,vnode)) * node_val(field1,vnode) ! Neumann
+                        !eps_bc_val = (u_tau_val**5.0)/( node_val(scalar_eddy_visc,vnode)*yPlus*node_val(bg_visc,1,1,1) ) ! Neumann II
+                        !eps_bc_val = ( c_mu*node_val(field2,vnode)**2 )/( kappa*yPlus*node_val(bg_visc,1,1,1) ) ! Dirichlet
+                        !eps_bc_val = ((kappa*u_tau_val)/1.3) * node_val(field1,vnode) ! Flux
+                        eps_bc_val = (u_tau_val**5.0)/( 1.3*yPlus*node_val(bg_visc,1,1,1) ) ! Neumann III
+                        !eps_bc_val = 0.0
                      endif
 
-!                     call set(surface_field, inode, eps_bc_val)
-                     call set(surface_field, vnode, eps_bc_val)
-                     !surface_field%val(inode) = eps_bc_val
+                     call set(surface_field, inode, eps_bc_val) !AMIN
+
                   end do
               end do
 
