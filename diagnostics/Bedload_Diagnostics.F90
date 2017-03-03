@@ -76,7 +76,6 @@ subroutine calculate_bedload_flux(state, v_field)
       !real, dimension(ele_ngi(bedload_flux_surface, i_ele)) :: detwei         
                   
       ewrite(1,*) "In calculate_sediment_bedload_flux"
-      ewrite(2,*) 'Probando ewrite'
       
       ! obtain some required model variables
       n_sediment_fields = get_n_sediment_fields()
@@ -107,7 +106,7 @@ subroutine calculate_bedload_flux(state, v_field)
         bss => extract_vector_field(state, "BedShearStress", stat)
         if (stat /= 0) then
           FLExit("A bed shear stress must be specified to calculate bedload flux")
-        end if        
+        end if
 
         base_path = trim(complete_field_path(v_field%option_path)) // "/algorithm/transport_model"
 
@@ -116,8 +115,6 @@ subroutine calculate_bedload_flux(state, v_field)
         if (have_option(trim(base_path)//"/meyer_peter_muller")) then
 
           call zero(v_field)
-
-          ewrite(2,*) 'EN MPM CUANTO ES EL BSS EN EL NODO 1:', node_val(bss,1)
       
           sndim = mesh_dim(bss)
           snloc = face_loc(bss, 1)
@@ -137,7 +134,10 @@ subroutine calculate_bedload_flux(state, v_field)
           end do
           deallocate(q_star)
           deallocate(t_crit)
-          deallocate(faceglobalnodes)  
+          deallocate(faceglobalnodes)
+
+          !ewrite(2,*) 'JN-BREAK, BSS IN NODE 1:', node_val(bss,1)
+          ewrite_minmax(v_field)
    
         end if
 

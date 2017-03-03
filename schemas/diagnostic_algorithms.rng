@@ -2189,6 +2189,13 @@ a horizontal vector living on the specified surface.</a:documentation>
       <element name="surface_ids">
         <ref name="integer_vector"/>
       </element>
+      <element name="beta">
+        <a:documentation>coefficient for integration by parts on rhs. </a:documentation>
+        <ref name="real"/>
+      </element>
+      <element name="solver">
+        <ref name="linear_solver_options_sym"/>
+      </element>
     </element>
   </define>
   <define name="bedload_flux_algorithm">

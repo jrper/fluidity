@@ -39,6 +39,9 @@ module sediment
   use fetools
   use fields
   use state_module
+  use sparsity_patterns, only: make_sparsity
+  use sparse_tools, only: csr_matrix, csr_sparsity
+  use solvers, only: petsc_solve
   use boundary_conditions
   use field_derivatives
   use sparse_matrices_fields
@@ -532,7 +535,7 @@ contains
 
   end subroutine assemble_generic_reentrainment_ele
 
- subroutine surface_horizontal_divergence(source, positions, output, surface_ids)
+ subroutine surface_horizontal_divergence(source, positions, output, beta, surface_ids, option_path)
     !!< Return a field containing:
     !!<    div_HS source
     !!< where div_hs is a divergence operator restricted to the surface and
@@ -541,7 +544,9 @@ contains
     type(vector_field), intent(in) :: source
     type(vector_field), intent(in) :: positions
     type(scalar_field), intent(inout) :: output
+    real, intent(in) :: beta
     integer, dimension(:), intent(in) :: surface_ids
+    character(len=*), optional, intent(in) :: option_path
     
     type(mesh_type) :: surface_mesh, source_surface_mesh, output_surface_mesh
 
@@ -567,6 +572,8 @@ contains
        end if
     end do
 
+    ewrite(2,*) 'JN-BREAK, SURFACE ID:', surface_ids
+
     !!! make the surface meshes
 
     call create_surface_mesh(surface_mesh,  surface_nodes, &
@@ -578,6 +585,10 @@ contains
     call create_surface_mesh(output_surface_mesh,  output_surface_nodes, &
          output%mesh, surface_elements=surface_elements(:idx-1), &
          name='OutputSurfaceMesh')
+
+    call add_faces(surface_mesh)
+    call add_faces(source_surface_mesh, surface_mesh)
+    call add_faces(output_surface_mesh, surface_mesh)
 
     call allocate(surface_positions,mesh_dim(surface_mesh),surface_mesh,&
          "Coordinates")
@@ -595,9 +606,15 @@ contains
        call set(surface_source,i,val(:mesh_dim(surface_mesh)))
     end do
 
+    if (present(option_path)) then
+       surface_output%option_path = option_path
+    else
+       surface_output%option_path = output%option_path
+    end if
+
 !!! now do the low dimensional divergence operation
 
-    call div(surface_source,surface_positions,surface_output)
+    call get_div(surface_source,surface_positions,surface_output,beta)
 
     do i=1,size(output_surface_nodes)
        call set(output,output_surface_nodes(i),node_val(surface_output,i))
@@ -620,6 +637,130 @@ contains
     deallocate(surface_nodes, source_surface_nodes, output_surface_nodes)
 
   end subroutine surface_horizontal_divergence
+
+  subroutine get_div(source,positions,output,beta)
+
+    type(vector_field), intent(in) :: source, positions
+    type(scalar_field), intent(inout) :: output
+    real, intent(in) ::  beta
+
+    type(element_type), pointer :: shape
+    integer, dimension(:), pointer :: nodes
+
+    type(csr_matrix) :: M
+    type(csr_sparsity) :: sparsity
+    type(scalar_field) :: rhs
+    type(scalar_field) :: masslump
+    integer :: i, i_node, ele, face, dim
+
+    real, dimension(ele_ngi(output,1)) :: detwei
+    real, dimension(face_ngi(positions,1)) :: sdetwei, flux
+    real, dimension(mesh_dim(positions), face_ngi(positions,1)) :: normal
+    real, dimension(mesh_dim(positions), ele_ngi(positions,1)) :: normal_ele
+    real, dimension(ele_loc(positions,1), ele_ngi(positions,1),&
+         mesh_dim(positions)) :: do_t
+
+    sparsity = make_sparsity(output%mesh, output%mesh, "DivSparsity")
+
+    call allocate(M, sparsity, name = "DivMat")
+    call allocate(rhs, output%mesh, "RHS")
+    call allocate(masslump, output%mesh, 'SurfaceMassLump')
+
+    call zero(M)
+    call zero(rhs)
+    call zero(output)
+    call zero(masslump)
+
+    do ele=1, element_count(output)
+       !!! element loop
+
+       shape => ele_shape(output,ele)
+       nodes => ele_nodes(output,ele)
+
+       call transform_to_physical(positions, ele, shape=shape, dshape=do_t, detwei=detwei)
+       !! build the mass matrix
+       call addto(M,nodes,nodes,shape_shape(shape,shape,detwei)&
+          +0.1**2*dshape_dot_dshape(do_t,do_t,detwei))
+       !! generate element rhs
+       call addto(rhs,nodes,get_div_element(ele_loc(output,ele)))
+
+       !! build the lumped mass in the elements
+       !call transform_facet_to_physical(positions, ele, detwei, normal_ele)
+       !call addto(masslump,nodes,shape_shape(shape,shape,detwei))
+       do i=1,size(nodes)
+       call addto(masslump,nodes(i),sum(detwei)/ele_loc(output,ele))
+       end do
+    end do
+    
+    do face=1, face_count(source)
+        !!! face loop
+       shape => face_shape(positions,face)
+
+       call transform_facet_to_physical(positions, face, detwei_f=sdetwei, normal=normal)
+       !! this could be cleverer
+       flux=sum(face_val_at_quad(source,face)*normal, dim=1)
+       !! generate_element_rhs
+       call addto(rhs,face_global_nodes(source,face), get_div_face(face_loc(output,face)))
+
+       !! build the lumped mass in the faces
+       !call addto(masslump,face_global_nodes(source,face),shape_shape(shape,shape,detwei))
+       !call addto(masslump,face_global_nodes(source,face),sum(shape_shape(shape,shape,detwei),1))
+    end do
+
+    call petsc_solve(output,M,rhs)
+    !call petsc_solve(output,masslump,rhs)
+    !call petsc_solve(output,lumped(M),rhs)
+
+    ! Check continuity in output mesh and divide by the inverse global lumped mass
+    if(continuity(output)>=0) then
+        where (masslump%val/=0.0)
+            masslump%val=1./masslump%val
+        end where
+        call scale(rhs, masslump)
+        call deallocate(masslump)
+    end if
+
+!    call set(output,rhs)
+!
+!    do face = 1, face_count(source)
+!        do i_node = 1, node_count(source)
+!            call addto(output, face_global_nodes(source,face), node_val(rhs, i_node))
+!            call set(output, face_global_nodes(source,face), node_val(rhs, i_node))
+!        end do
+!    end do
+
+    call deallocate(M)
+    call deallocate(sparsity)
+    call deallocate(rhs)
+           
+  contains
+
+    function get_div_element(nloc) result(local_rhs)
+
+      integer ::nloc
+      real, dimension(nloc) :: local_rhs
+      real, dimension(mesh_dim(output), mesh_dim(output),&
+           ele_ngi(output, ele)) :: source_grad
+
+      source_grad = ele_grad_at_quad(source, ele, do_t)
+      local_rhs = -beta*dshape_dot_vector_rhs(do_t,ele_val_at_quad(source,ele),detwei)
+      do dim=1, mesh_dim(output)
+         local_rhs = local_rhs &
+           +(1.0-beta)*shape_rhs(shape, source_grad(dim, dim, :)*detwei)
+      end do
+
+    end function get_div_element
+
+    function get_div_face(nloc) result(local_rhs)
+      
+      integer:: nloc
+      real, dimension(nloc) :: local_rhs
+
+      local_rhs = beta*shape_rhs(shape, flux*sdetwei)
+
+    end function get_div_face
+
+  end subroutine get_div
 
   subroutine sediment_check_options
 

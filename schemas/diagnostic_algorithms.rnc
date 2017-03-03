@@ -1596,6 +1596,13 @@ surface_horizontal_divergence_algorithm =
          vector_source_field,
          element surface_ids {
             integer_vector
+         },         
+         ## coefficient for integration by parts on rhs. 
+         element beta {
+            real
+         },
+         element solver {
+            linear_solver_options_sym
          }
       }
    )
