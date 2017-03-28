@@ -147,6 +147,7 @@ subroutine drag_surface(bigm, rhs, state, density)
                  ! calc friction velocity: u_tau_1 = |u_wall|/yPlus, u_tau_2 = C_mu^0.25*sqrt(k), u_tau = max ( u_tau_1 , u_tau_2 )
                  friction_velocity = max( sqrt(sum(face_val_at_quad(nl_velocity, sele)**2, dim=1)) / yPlus , &
                                           sqrt(face_val_at_quad(TKE, sele)) * 0.09**0.25 )
+                 !friction_velocity = sqrt(sum(face_val_at_quad(nl_velocity, sele)**2, dim=1)) / yPlus
               else
                  ! calc friction velocity: u_tau = u_tau_1
                  friction_velocity = sqrt(sum(face_val_at_quad(nl_velocity, sele)**2, dim=1)) / yPlus

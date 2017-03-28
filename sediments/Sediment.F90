@@ -572,7 +572,7 @@ contains
        end if
     end do
 
-    ewrite(2,*) 'JN-BREAK, SURFACE ID:', surface_ids
+    ewrite(1,*) 'JN - SURFACE ID:', surface_ids
 
     !!! make the surface meshes
 
@@ -595,6 +595,9 @@ contains
     call allocate(surface_source,mesh_dim(surface_mesh),source_surface_mesh,&
          "Source")
     call allocate(surface_output,output_surface_mesh,"Divergence")
+
+    !ewrite(1,*) 'JN - ELEMENTS:', element_count(output_surface_mesh)
+    !ewrite(1,*) 'JN - NODES:', output_surface_nodes
 
     do i=1,size(surface_nodes)
        val=node_val(positions,surface_nodes(i))
@@ -680,7 +683,7 @@ contains
        call transform_to_physical(positions, ele, shape=shape, dshape=do_t, detwei=detwei)
        !! build the mass matrix
        call addto(M,nodes,nodes,shape_shape(shape,shape,detwei)&
-          +0.1**2*dshape_dot_dshape(do_t,do_t,detwei))
+          +0.025*0.1*dshape_dot_dshape(do_t,do_t,detwei))
        !! generate element rhs
        call addto(rhs,nodes,get_div_element(ele_loc(output,ele)))
 

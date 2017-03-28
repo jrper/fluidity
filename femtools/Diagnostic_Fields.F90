@@ -3089,11 +3089,12 @@ contains
       type(scalar_field) :: masslump
       type(vector_field), pointer :: U, X
       type(tensor_field), pointer :: visc
-      integer, dimension(:), allocatable :: faceglobalnodes
-      integer :: i,j,snloc,ele,sele,globnod,face,node,stat
+      integer, dimension(:), allocatable :: faceglobalnodes,faceglobalnodes_U,faceglobalnodes_TKE
+      integer :: i,j,snloc,ele,sele,globnod,globnod_U,globnod_TKE,face,node,stat
       real :: speed,density,drag_coefficient
 
       ! friction velocity
+      type(scalar_field), pointer :: TKE
       real :: friction_velocity, yPlus
 
       !! for DG
@@ -3147,22 +3148,53 @@ contains
 
          call zero(bed_shear_stress)
 
-         U => extract_vector_field(state, "Velocity")
-         snloc = face_loc(U, 1)
-         allocate( faceglobalnodes(1:snloc) )
-         do sele=1,surface_element_count(U)
-            ele = face_ele(U, sele)
-            faceglobalnodes = face_global_nodes(U, sele)
-            do j = 1,snloc
-               globnod = faceglobalnodes(j)
-               speed = norm2(node_val(U, globnod))
-               yPlus = 11.06 ! assume constant for now
-               friction_velocity = speed / yPlus
-               ! calc wall shear stress: tau_wall = - (u_tau/yPlus)*|u_wall|
-               call set(bed_shear_stress, globnod, density*(friction_velocity/yPlus)*node_val(U, globnod))
-            end do
-         end do
-         deallocate( faceglobalnodes )
+         if(have_option("/material_phase[0]/subgridscale_parameterisations/k-epsilon")) then
+
+             U => extract_vector_field(state, "Velocity")
+             TKE => extract_scalar_field(state, "TurbulentKineticEnergy")
+             snloc = face_loc(U, 1)
+             allocate( faceglobalnodes_U(1:snloc) )
+             allocate( faceglobalnodes_TKE(1:snloc) )
+             do sele=1,surface_element_count(U)
+                ele = face_ele(U, sele)
+                faceglobalnodes_U = face_global_nodes(U, sele)
+                faceglobalnodes_TKE = face_global_nodes(TKE, sele)
+                do j = 1,snloc
+                   globnod_U = faceglobalnodes_U(j)
+                   globnod_TKE = faceglobalnodes_TKE(j)
+                   speed = norm2(node_val(U, globnod_U))
+                   yPlus = 11.06 ! assume constant for now
+                   !yPlus = 300.0
+                   friction_velocity = max((speed / yPlus), (sqrt(node_val(TKE, globnod_TKE)) * 0.09**0.25))
+                   !friction_velocity = speed / yPlus
+                   ! calc wall shear stress: tau_wall = - (u_tau/yPlus)*|u_wall|
+                   call set(bed_shear_stress, globnod_U, density*(friction_velocity/yPlus)*node_val(U, globnod_U))
+                end do
+             end do
+             deallocate( faceglobalnodes_U )
+             deallocate( faceglobalnodes_TKE )
+
+          else
+
+             U => extract_vector_field(state, "Velocity")
+             snloc = face_loc(U, 1)
+             allocate( faceglobalnodes_U(1:snloc) )
+             do sele=1,surface_element_count(U)
+                ele = face_ele(U, sele)
+                faceglobalnodes_U = face_global_nodes(U, sele)
+                do j = 1,snloc
+                   globnod_U = faceglobalnodes_U(j)
+                   speed = norm2(node_val(U, globnod_U))
+                   yPlus = 11.06 ! assume constant for now
+                   !yPlus = 300.0
+                   friction_velocity = speed / yPlus
+                   ! calc wall shear stress: tau_wall = - (u_tau/yPlus)*|u_wall|
+                   call set(bed_shear_stress, globnod_U, density*(friction_velocity/yPlus)*node_val(U, globnod_U))
+                end do
+             end do
+             deallocate( faceglobalnodes_U )
+
+          end if
          
       ! calculate using velocity gradient
       else if (have_option(trim(bed_shear_stress%option_path)//&

@@ -1609,14 +1609,14 @@ surface_horizontal_divergence_algorithm =
 
 bedload_flux_algorithm =    
    (
-      ## Algorithm calculates the bed-load flux from different bed-load transport models.      
-      element algorithm {
+      ## Algorithm calculates the bed-load flux from different bed-load transport models.            
+      element algorithm {      	 
          attribute name { "bedload_flux" },
          attribute material_phase_support { "single" },
          #vector_source_field,
          element surface_ids {
             integer_vector
-         },
+         },         
          element transport_model {            
             element meyer_peter_muller {
                empty

@@ -2200,7 +2200,7 @@ a horizontal vector living on the specified surface.</a:documentation>
   </define>
   <define name="bedload_flux_algorithm">
     <element name="algorithm">
-      <a:documentation>Algorithm calculates the bed-load flux from different bed-load transport models.      </a:documentation>
+      <a:documentation>Algorithm calculates the bed-load flux from different bed-load transport models.            </a:documentation>
       <attribute name="name">
         <value>bedload_flux</value>
       </attribute>
