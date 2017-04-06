@@ -2190,7 +2190,11 @@ a horizontal vector living on the specified surface.</a:documentation>
         <ref name="integer_vector"/>
       </element>
       <element name="beta">
-        <a:documentation>coefficient for integration by parts on rhs. </a:documentation>
+        <a:documentation>Coefficient for integration by parts on rhs. </a:documentation>
+        <ref name="real"/>
+      </element>
+      <element name="smoothing_length">
+        <a:documentation>Smoothing length for horizontal divergence field. Suggested to the element size on surface. </a:documentation>
         <ref name="real"/>
       </element>
       <element name="solver">
@@ -2211,6 +2215,10 @@ a horizontal vector living on the specified surface.</a:documentation>
       <element name="surface_ids">
         <ref name="integer_vector"/>
       </element>
+      <element name="angle_of_repose">
+        <a:documentation>FRICTION ANGLE OF THE SEDIMENT, which is in the range [30 - 50 ] degrees</a:documentation>
+        <ref name="real"/>
+      </element>
       <element name="transport_model">
         <choice>
           <element name="meyer_peter_muller">
@@ -2220,6 +2228,9 @@ a horizontal vector living on the specified surface.</a:documentation>
             <empty/>
           </element>
           <element name="van_rijn">
+            <empty/>
+          </element>
+          <element name="engelund_fredsoe">
             <empty/>
           </element>
         </choice>

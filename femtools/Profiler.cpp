@@ -27,6 +27,7 @@
 */
 
 #include "Profiler.h"
+#include <string.h>
 
 using namespace std;
 

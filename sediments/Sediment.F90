@@ -535,7 +535,7 @@ contains
 
   end subroutine assemble_generic_reentrainment_ele
 
- subroutine surface_horizontal_divergence(source, positions, output, beta, surface_ids, option_path)
+ subroutine surface_horizontal_divergence(source, positions, output, beta, smoothing_length, surface_ids, option_path)
     !!< Return a field containing:
     !!<    div_HS source
     !!< where div_hs is a divergence operator restricted to the surface and
@@ -544,7 +544,7 @@ contains
     type(vector_field), intent(in) :: source
     type(vector_field), intent(in) :: positions
     type(scalar_field), intent(inout) :: output
-    real, intent(in) :: beta
+    real, intent(in) :: beta, smoothing_length
     integer, dimension(:), intent(in) :: surface_ids
     character(len=*), optional, intent(in) :: option_path
     
@@ -572,7 +572,7 @@ contains
        end if
     end do
 
-    ewrite(1,*) 'JN - SURFACE ID:', surface_ids
+    !ewrite(1,*) 'JN - SURFACE ID:', surface_ids
 
     !!! make the surface meshes
 
@@ -617,7 +617,7 @@ contains
 
 !!! now do the low dimensional divergence operation
 
-    call get_div(surface_source,surface_positions,surface_output,beta)
+    call get_div(surface_source,surface_positions,surface_output,beta,smoothing_length)
 
     do i=1,size(output_surface_nodes)
        call set(output,output_surface_nodes(i),node_val(surface_output,i))
@@ -641,11 +641,11 @@ contains
 
   end subroutine surface_horizontal_divergence
 
-  subroutine get_div(source,positions,output,beta)
+  subroutine get_div(source,positions,output,beta,smoothing_length)
 
     type(vector_field), intent(in) :: source, positions
     type(scalar_field), intent(inout) :: output
-    real, intent(in) ::  beta
+    real, intent(in) ::  beta, smoothing_length
 
     type(element_type), pointer :: shape
     integer, dimension(:), pointer :: nodes
@@ -683,20 +683,20 @@ contains
        call transform_to_physical(positions, ele, shape=shape, dshape=do_t, detwei=detwei)
        !! build the mass matrix
        call addto(M,nodes,nodes,shape_shape(shape,shape,detwei)&
-          +0.025*0.1*dshape_dot_dshape(do_t,do_t,detwei))
+          +((smoothing_length)**2)*dshape_dot_dshape(do_t,do_t,detwei))
        !! generate element rhs
        call addto(rhs,nodes,get_div_element(ele_loc(output,ele)))
 
        !! build the lumped mass in the elements
        !call transform_facet_to_physical(positions, ele, detwei, normal_ele)
        !call addto(masslump,nodes,shape_shape(shape,shape,detwei))
-       do i=1,size(nodes)
-       call addto(masslump,nodes(i),sum(detwei)/ele_loc(output,ele))
-       end do
+       !do i=1,size(nodes)
+            !call addto(masslump,nodes(i),sum(detwei)/ele_loc(output,ele))
+       !end do
     end do
     
     do face=1, face_count(source)
-        !!! face loop
+       !!! face loop
        shape => face_shape(positions,face)
 
        call transform_facet_to_physical(positions, face, detwei_f=sdetwei, normal=normal)
@@ -715,13 +715,13 @@ contains
     !call petsc_solve(output,lumped(M),rhs)
 
     ! Check continuity in output mesh and divide by the inverse global lumped mass
-    if(continuity(output)>=0) then
-        where (masslump%val/=0.0)
-            masslump%val=1./masslump%val
-        end where
-        call scale(rhs, masslump)
-        call deallocate(masslump)
-    end if
+    !if(continuity(output)>=0) then
+    !    where (masslump%val/=0.0)
+    !        masslump%val=1./masslump%val
+    !    end where
+    !    call scale(rhs, masslump)
+    !    call deallocate(masslump)
+    !end if
 
 !    call set(output,rhs)
 !

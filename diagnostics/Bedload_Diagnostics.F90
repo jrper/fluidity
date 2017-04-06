@@ -52,21 +52,23 @@ contains
 
           type(state_type), intent(inout)           :: state
           type(mesh_type)                           :: surface_mesh
-          type(scalar_field), pointer               :: sediment_field
+          type(scalar_field), pointer               :: sediment_field, evisc
           type(vector_field), pointer               :: x, bss
           type(vector_field), intent(inout)         :: v_field
           type(vector_field)                        :: bedload_flux_surface
 
-          integer, dimension(surface_element_count(v_field)) :: surface_elements
+          integer, dimension(surface_element_count(v_field))    :: surface_elements
 
-          integer                                   :: i, idx, j, n_sediment_fields, i_field,&
-          & i_ele, snloc, sndim, ele, sele, globnod, stat
+          integer                                   :: i, j, k, idx, n_sediment_fields, i_field,&
+                                                       & stat, i_ele, snloc, sndim, sele, globnod, globnod_prev, globnod_next, globnod_visc
 
-          integer, dimension(:), pointer            :: surface_node_list, s_nodes
+          integer, dimension(:), pointer            :: surface_node_list, s_nodes, ele
           integer, dimension(2)                     :: surface_id_count
-          integer, dimension(:), allocatable        :: faceglobalnodes, surface_ids
-          real, dimension(:), allocatable           :: t_crit, q_star, d_star
-          real                                      :: density, R, d, g
+          integer, dimension(:), allocatable        :: surface_ids, faceglobalnodes, faceglobalnodes_prev, faceglobalnodes_next, faceglobalnodes_visc
+          real, dimension(:), allocatable           :: t_crit, q_star, q_aval
+          real                                      :: density, R, d, g, d_star
+          real                                      :: b, repose, q_aval_x, q_aval_y
+          real, parameter                           :: PI = 4.D0*DATAN(1.D0)
           character(len = OPTION_PATH_LEN)          :: base_path
 
           ! Declarations for future FE development
@@ -81,8 +83,14 @@ contains
 
           ewrite(1,*) "In calculate_sediment_bedload_flux"
 
+          ! extract turbulent viscocity field
+          evisc => extract_scalar_field(state, "ScalarEddyViscosity")
+          !if (stat = 0) then
+          !  evisc => 1.0
+          !end if
+
           ! extract coordinate field
-          !x => extract_vector_field(state, "Coordinate")
+          x => extract_vector_field(state, "Coordinate")
 
           ! extract bed shear stress field
           bss => extract_vector_field(state, "BedShearStress", stat)
@@ -114,7 +122,6 @@ contains
             ! define base path
             base_path = trim(complete_field_path(v_field%option_path))//&
             &"/algorithm"
-
             !ewrite(1,*) 'JN - PATH:', base_path
 
             ! obtain sediment bedload surface ids
@@ -123,9 +130,9 @@ contains
 
             allocate(surface_ids(surface_id_count(1)))
 
-            call get_option(trim(base_path)//"/surface_ids", &
-            & surface_ids)
+            call get_option(trim(base_path) // "/angle_of_repose", repose, default=0.0)
 
+            call get_option(trim(base_path)//"/surface_ids", surface_ids)
             !ewrite(1,*) 'JN - SURFACE ID:', surface_ids
 
             ! get the relevant surface elements
@@ -138,9 +145,6 @@ contains
             end do
 
             ! generate surface_mesh for calculation of bedload flux and create surface field
-            !call create_surface_mesh(surface_mesh, surface_node_list, &
-            !    & mesh=v_field%mesh, name='SurfaceMesh')
-
             call create_surface_mesh(surface_mesh, surface_node_list, &
                 & mesh=v_field%mesh, surface_elements=surface_elements(:idx-1), name='SurfaceMesh')
 
@@ -148,147 +152,332 @@ contains
 
             call zero(bedload_flux_surface)
 
+            call zero(v_field)
+
             !ewrite(1,*) 'JN - SURF ELEMENTS:', element_count(bedload_flux_surface)
             !ewrite(1,*) 'JN - SURF NODES:', surface_node_list
 
             ! calculate bedload flux
-            ! calculate Meyer-Peter and Muller model
-            if (have_option(trim(base_path)//"/transport_model/meyer_peter_muller")) then
-            call zero(v_field)
-
             ! loop through elements in surface field
-            elements_mpm: do i_ele=1, element_count(bedload_flux_surface)
+            elements: do i_ele=1, element_count(bedload_flux_surface)
             !elements: do i_ele=1, element_count(v_field)
             !elements: do i_ele=1, size(surface_elements)
 
-              ! check if element is on prescribed surface
-              !if (.not.any(surface_element_id(v_field, i_ele) == surface_ids)) then
-                 !cycle elements
-              !end if
+                ! check if element is on prescribed surface
+                !if (.not.any(surface_element_id(v_field, i_ele) == surface_ids)) then
+                     !cycle elements
+                !end if
 
-              !s_nodes => ele_nodes(bedload_flux_surface, i_ele)
-              !s_nodes => ele_nodes(v_field, i_ele)
+                !s_nodes => ele_nodes(bedload_flux_surface, i_ele)
+                !s_nodes => ele_nodes(v_field, i_ele)
+                !ele => face_ele(bss, i_ele)
 
-              sndim = mesh_dim(bss)
-              snloc = face_loc(bss, 1)
-              !ele = face_ele(bss, i_ele)
+                sndim = mesh_dim(bss)
+                !ewrite(1,*) 'JN - BSS DIMENSION:', sndim
 
-              !ewrite(1,*) '******'
-              !ewrite(1,*) 'JN - BSS DIMENSION:', sndim
-              !ewrite(1,*) 'JN - BSS ELEMENTS', surface_element_count(bss)
-              !ewrite(1,*) 'JN - BSS FACES IN ONE ELE:', snloc
-              !ewrite(1,*) 'JN - BSS FACE ELE NUM:', ele
-              !ewrite(1,*) 'JN - SURF NODES IN ONE ELE:', s_nodes
-
-              allocate(t_crit(1:sndim))
-              allocate(q_star(1:sndim))
-              allocate(faceglobalnodes(1:snloc))
-              !do sele=1, surface_element_count(bss)
-                !faceglobalnodes = face_global_nodes(bss, sele)
-                faceglobalnodes = face_global_nodes(bss, surface_elements(i_ele))
+                snloc = face_loc(bss, 1)
+                !ewrite(1,*) 'JN - BSS NODES IN FACE ONE:', snloc
 
                 !ewrite(1,*) '******'
-                !ewrite(1,*) 'JN - BSS ELEMENT:', i_ele
-                !ewrite(1,*) 'JN - BSS GLOBAL NODES IN FACE:', faceglobalnodes
+                ewrite(1,*) 'JN - BSS ELEMENT:', i_ele
+                ewrite(1,*) 'JN - V_FIELD SURF ELE:', surface_elements((i_ele))
+                !ewrite(1,*) 'JN - BSS ELEMENTS:', surface_element_count(bss)
+
+                allocate(t_crit(1:sndim))
+                allocate(q_star(1:sndim))
+                allocate(q_aval(1:sndim))
+                allocate(faceglobalnodes_visc(1:snloc))
+                allocate(faceglobalnodes(1:snloc))
+                allocate(faceglobalnodes_next(1:snloc))
+                allocate(faceglobalnodes_prev(1:snloc))
+
+                faceglobalnodes_visc = face_global_nodes(evisc, surface_elements(i_ele))
+                ewrite(1,*) 'JN - EDDY VISC GLOBAL NODES IN FACE:', faceglobalnodes_visc
+
+                !do sele=1, surface_element_count(bss)
+                !faceglobalnodes = face_global_nodes(bss, sele)
+                faceglobalnodes = face_global_nodes(bss, surface_elements(i_ele))
+                ewrite(1,*) 'JN - BSS GLOBAL NODES IN FACE:', faceglobalnodes
+
+                if (i_ele < element_count(bedload_flux_surface) - 1) then
+                faceglobalnodes_next = face_global_nodes(bss, surface_elements(i_ele+1))
+                !ewrite(1,*) 'JN - BSS GLOBAL NODES IN NEXT FACE:', faceglobalnodes_next
+                end if
+
+                if (i_ele > 1) then
+                faceglobalnodes_prev = face_global_nodes(bss, surface_elements(i_ele-1))
+                !ewrite(1,*) 'JN - BSS GLOBAL NODES IN PREV FACE:', faceglobalnodes_prev
+                end if
+
+                ewrite(1,*) '******'
 
                 do i = 1, snloc
-                    t_crit = 0.00
+
+                    globnod_visc = faceglobalnodes_visc(i)
+                    ewrite(1,*) 'JN - EDDY VISC GLOBAL NODE:', globnod_visc
+
                     globnod = faceglobalnodes(i)
-                    !q_star = 8.0 * (((norm2(node_val(bss, globnod)) - t_crit) / (density * R * g * d)) ** 1.5) * (node_val(bss, globnod) / norm2(node_val(bss, globnod)))
+                    ewrite(1,*) 'JN - BSS GLOBAL NODE:', globnod
+                    globnod_next = faceglobalnodes_next(i)
+                    !ewrite(1,*) 'JN - BSS GLOBAL NODE NEXT FACE:', globnod_next
+                    globnod_prev = faceglobalnodes_prev(i)
+                    !ewrite(1,*) 'JN - BSS GLOBAL NODE PREV FACE:', globnod_prev
+
+                    ! compute dimensionless particle diameter
+                    ewrite(1,*) 'JN - EDDY VISC:', node_val(evisc, globnod_visc)
+                    d_star = 10.0
+                    !d_star = d * ((R*g/(node_val(evisc, globnod)**2))**1/3)
+                    ewrite(1,*) 'JN - DIMENSIONLESS PARTICLE DIAMETER:', d_star
+
+                    if (have_option("/material_phase::water/subgridscale_parameterisations/k-epsilon")) then
+                        !t_crit(1:sndim) = (0.30 / (1 + 1.2*d_star)) + 0.055*(1-exp(-0.020*d_star)) !Soulsby (1997)
+                        t_crit = 0.00
+                    else
+                        t_crit(1:sndim) = 0.05
+                        !t_crit = 0.00
+                    end if
+
+                    ewrite(1,*) 'JN - T_CRIT:', t_crit
+
+                    ! calculate Meyer-Peter and Muller model
+                    if (have_option(trim(base_path)//"/transport_model/meyer_peter_muller")) then
+
                     q_star = 8.0 * ((node_val(bss, globnod) - t_crit / (density * R * g * d))) * sqrt((norm2(node_val(bss, globnod)) - t_crit / (density * R * g * d)))
+
+                    ! calculate Nielsen model
+                    elseif (have_option(trim(base_path)//"/transport_model/nielsen")) then
+
+                    q_star = 12.0 * ((node_val(bss, globnod) - t_crit / (density * R * g * d))) * sqrt((norm2(node_val(bss, globnod)) / (density * R * g * d)))
+
+                    ! calculate Van Rijn model
+                    !elseif (have_option(trim(base_path)//"/transport_model/van_rijn")) then
+
+                    !q_star = (0.053 / (d_star) ** 0.3)) * (((node_val(bss, globnod) / (density * R * g * d)) / t_crit) - 1) ** 2.1
+
+                    ! calculate Engelund and Fresoe model
+                    !elseif (have_option(trim(base_path)//"/transport_model/engelund_fredsoe")) then
+
+                    !q_star =
+
+                    end if
 
                     !ewrite(1,*) 'JN - QSTAR:', q_star
 
                     call set(v_field, globnod, q_star * sqrt(R * g * (d ** 3)))
+                    ewrite(1,*) 'JN - BEDLOAD RATE:', node_val(v_field, globnod)
+                    ewrite(1,*) '******'
 
-                    !ewrite(1,*) 'JN - BEDLOAD RATE:', node_val(v_field, globnod)
+                    ! AVALANCHE MODEL
+
+                    if (sndim == 2) then
+
+                        call avalanche_2d(state, i_ele, repose, x, v_field, surface_elements, b, q_aval_x, q_aval_y)
+
+                        if (tan(abs(b)*PI/180) > tan(repose*PI/180)) then
+
+                        !ewrite(1,*) 'JN - AVALANCHE_X IN BED FLUX:', q_aval_x
+                        !ewrite(1,*) 'JN - AVALANCHE_Y IN BED FLUX:', q_aval_y
+
+                        end if
+
+                    elseif (sndim == 3) then
+
+                        call avalanche_2d(state, i_ele, repose, x, v_field, surface_elements, b, q_aval_x, q_aval_y)
+
+                    end if
+
+                    if (repose /= 0.0) then
+                        if (tan(abs(b)*PI/180) > tan(repose*PI/180)) then
+                            q_aval(1:sndim) = (/ q_aval_x, q_aval_y /)
+                            ewrite(1,*) 'JN - Q_AVAL:', q_aval
+                            q_aval(1:sndim) = (/ abs(q_aval_x), abs(q_aval_y) /)
+                            ewrite(1,*) 'JN - Q_AVAL ABS:', q_aval
+                            ewrite(1,*) 'JN - BED FLUX PLUS Q_AVAL:', node_val(v_field, globnod) + q_aval
+                            ewrite(1,*) 'JN - BED FLUX MINUS Q_AVAL:', node_val(v_field, globnod) - q_aval
+
+                            if (b < 0.0) then
+
+                                !call addto(v_field, 1, globnod, q_aval_x)
+                                !call addto(v_field, 2, globnod, q_aval_y)
+
+                                !ewrite(1,*) 'JN - SIGNS:', sign(1.0, node_val(v_field,1,globnod))
+                                !ewrite(1,*) 'JN - SIGNS:', sign(1.0, node_val(v_field,2,globnod))
+                                !ewrite(1,*) 'JN - SIGNS:', sign(1.0, q_aval(1))
+                                !ewrite(1,*) 'JN - SIGNS:', sign(1.0, q_aval(2))
+
+                                do k = 1, sndim
+                                if (sign(1.0, node_val(v_field, k, globnod)) > 0.0) then
+
+                                    call addto(v_field, k, globnod, q_aval(k))
+
+                                else if (sign(1.0, node_val(v_field, k, globnod)) < 0.0) then
+
+                                    call addto(v_field, k, globnod, -q_aval(k))
+
+                                end if
+                                end do
+
+                                !if (i_ele < element_count(bedload_flux_surface) - 1) then
+                                !call addto(v_field, globnod_next, q_aval)
+                                !elseif (i_ele == element_count(bedload_flux_surface)) then
+                                !call addto(v_field, globnod, q_aval)
+                                !endif
+
+                            elseif (b > 0.0) then
+
+                                !call addto(v_field, 1, globnod, q_aval_x)
+                                !call addto(v_field, 2, globnod, q_aval_y)
+
+                                do k = 1, sndim
+                                if (sign(1.0, node_val(v_field, k, globnod)) > 0.0) then
+
+                                    call addto(v_field, k, globnod, q_aval(k))
+
+                                else if (sign(1.0, node_val(v_field, k, globnod)) < 0.0) then
+
+                                    call addto(v_field, k, globnod, -q_aval(k))
+
+                                end if
+                                end do
+
+                                !if (i_ele > 1) then
+                                !call addto(v_field, globnod_prev, -1 * q_aval)
+                                !elseif (i_ele == 1) then
+                                !call addto(v_field, globnod, q_aval)
+                                !endif
+
+                            end if
+                        end if
+                    end if
+
+                    ewrite(1,*) 'JN - BEDLOAD ADDITIONAL RATE:', node_val(v_field, globnod)
+                    ewrite(1,*) '******'
+
+                    if (i_ele < element_count(bedload_flux_surface) - 1) then
+                    !ewrite(1,*) 'JN - BEDLOAD ADDITIONAL RATE NEXT:', node_val(v_field, globnod_next)
+                    end if
+
+                    if (i_ele > 1) then
+                    !ewrite(1,*) 'JN - BEDLOAD ADDITIONAL RATE PREV:', node_val(v_field, globnod_prev)
+                    end if
 
                     ! For future FE development
                     !call set(bedload_flux_surface, s_nodes(i), node_val(v_field, globnod))
                 end do
-
-              !end do
-
-              !do j=1, size(surface_node_list)
-                !ewrite(1,*) 'JN - NODE ID:', surface_node_list(j)
-                !ewrite(1,*) 'JN - NODE VAL ID:', node_val(v_field, j)
-              !end do
-
-              !do j=1,size(surface_node_list)
-                  !call set(bedload_flux_surface,surface_node_list(j),node_val(v_field,j))
-              !end do
-
-              deallocate(q_star)
-              deallocate(t_crit)
-              deallocate(faceglobalnodes)
-
-            end do elements_mpm
-
-            end if
-
-            ! calculate Nielsen model
-            if (have_option(trim(base_path)//"/transport_model/nielsen")) then
-            call zero(v_field)
-
-            ! loop through elements in surface field
-            elements_nielsen: do i_ele=1, element_count(bedload_flux_surface)
-
-                sndim = mesh_dim(bss)
-                snloc = face_loc(bss, 1)
-                allocate(t_crit(1:sndim))
-                allocate(q_star(1:sndim))
-                allocate(faceglobalnodes(1:snloc))
-                !do sele=1,surface_element_count(bss)
-                  !ele = face_ele(bss, sele)
-                  !faceglobalnodes = face_global_nodes(bss, sele)
-                  faceglobalnodes = face_global_nodes(bss, surface_elements(i_ele))
-                  do i = 1,snloc
-                      t_crit = 0.00
-                      globnod = faceglobalnodes(i)
-                      q_star = 12.0 * ((node_val(bss, globnod) - t_crit / (density * R * g * d))) * sqrt((norm2(node_val(bss, globnod)) / (density * R * g * d)))
-                      call set(v_field, globnod, q_star * sqrt(R * g * (d ** 3)))
-                  end do
                 !end do
 
+                !do j=1, size(surface_node_list)
+                    !ewrite(1,*) 'JN - NODE ID:', surface_node_list(j)
+                    !ewrite(1,*) 'JN - NODE VAL ID:', node_val(v_field, j)
+                !end do
+
+                !do j=1,size(surface_node_list)
+                    !call set(bedload_flux_surface,surface_node_list(j),node_val(v_field,j))
+                !end do
+
+                deallocate(q_aval)
                 deallocate(q_star)
                 deallocate(t_crit)
+                deallocate(faceglobalnodes_visc)
                 deallocate(faceglobalnodes)
+                deallocate(faceglobalnodes_prev)
+                deallocate(faceglobalnodes_next)
 
-            end do elements_nielsen
-
-            end if
-
-          !ewrite(1,*) 'JN - GOT HERE'
+            end do elements
 
           ewrite_minmax(v_field)
+          !ewrite(1,*) 'JN - GOT HERE'
 
           call deallocate(bedload_flux_surface)
           call deallocate(surface_mesh)
-
           deallocate(surface_ids)
 
           end do sediment_fields
     
     end subroutine calculate_bedload_flux
 
+    subroutine avalanche_2d(state, i_ele, repose, X, v_field, surface_elements, b, q_aval_x, q_aval_y)
+
+        type(state_type), intent(in)                       :: state
+        type(vector_field), pointer                        :: X
+        type(vector_field), intent(in)                     :: v_field
+        integer                                            :: i, j, i_ele, sndim, snloc, globnod
+        integer, dimension(:), allocatable                 :: faceglobalnodes
+        integer, dimension(surface_element_count(v_field)) :: surface_elements
+        real                                               :: dx, dy, x1, x2, y1, y2, length, tx, ty,&
+                                                              & q_aval, repose
+        real, intent(out)                                  :: b, q_aval_x, q_aval_y
+        real, parameter                                    :: PI = 4.D0*DATAN(1.D0)
+
+        sndim = mesh_dim(X)
+        !ewrite(1,*) 'JN - X DIMENSION:', sndim
+
+        snloc = face_loc(X, 1)
+        !ewrite(1,*) 'JN - X NODES IN FACE ONE:', snloc
+
+        !ewrite(1,*) 'JN - BSS ELEMENT:', i_ele
+        !ewrite(1,*) 'JN - V_FIELD SURF ELE:', surface_elements((i_ele))
+
+        allocate(faceglobalnodes(1:snloc))
+        faceglobalnodes = face_global_nodes(X, surface_elements(i_ele))
+        ewrite(1,*) 'JN - X GLOBAL NODES IN FACE:', faceglobalnodes
+        ewrite(1,*) 'JN - MIN:', minval(faceglobalnodes)
+        ewrite(1,*) 'JN - MAX:', maxval(faceglobalnodes)
+        ewrite(1,*) 'JN - MIN:', minloc(faceglobalnodes)
+        ewrite(1,*) 'JN - MAX:', maxloc(faceglobalnodes)
+
+        do j = 1, snloc
+            do i = 1, sndim
+                globnod = faceglobalnodes(j)
+                ewrite(1,*) 'JN - COORDINATES:', node_val(X, i, globnod)
+            end do
+        end do
+
+        x2 = node_val(X, 1, maxval(faceglobalnodes))
+        x1 = node_val(X, 1, minval(faceglobalnodes))
+        ewrite(1,*) 'JN - X2:', x2
+        ewrite(1,*) 'JN - X1:', x1
+
+        y2 = node_val(X, 2, maxval(faceglobalnodes))
+        y1 = node_val(X, 2, minval(faceglobalnodes))
+        ewrite(1,*) 'JN - Y2:', y2
+        ewrite(1,*) 'JN - Y1:', y1
+
+        dx = x2 - x1
+        ewrite(1,*) 'JN - DX:', dx
+
+        dy = y2 - y1
+        ewrite(1,*) 'JN - DY:', dy
+
+        length = sqrt(dx**2 + dy**2)
+        ewrite(1,*) 'JN - LENGTH:', length
+
+        tx = dx / length
+        ewrite(1,*) 'JN - TX:', tx
+
+        ty = dy / length
+        ewrite(1,*) 'JN - TY:', ty
+
+        b = atan(ty/tx) * 180/PI
+        ewrite(1,*) 'JN - BOTTOM SLOPE:', b
+
+        if (tan(abs(b)*PI/180) > tan(repose*PI/180)) then
+
+            q_aval = 0.5 * length**2 * (1 - 0.0) * ((tan(abs(b)*PI/180) - tan(repose*PI/180))/cos(abs(b)*PI/180))
+            ewrite(1,*) 'JN - AVALANCHE:', q_aval
+
+            q_aval_x = q_aval * tx
+            !return
+            ewrite(1,*) 'JN - AVALANCHE_X:', q_aval_x
+
+            q_aval_y = q_aval * ty
+            !return
+            ewrite(1,*) 'JN - AVALANCHE_Y:', q_aval_y
+
+        end if
+
+        deallocate(faceglobalnodes)
+
+    end subroutine avalanche_2d
+
 end module bedload_diagnostics
-
-	  ! calculate Van Rijn model
-	  !if (have_option(trim(bedload_flux%option_path)//&
-	      !&"/diagnostic/transport_model/van_rijn")) then
-
-	  !call zero(bedload_flux)
-	    
-	  !snloc = face_loc(bss, 1)
-	  !allocate( faceglobalnodes(1:snloc) )
-	  !do sele=1,surface_element_count(bss)
-	  !ele = face_ele(bss, sele)
-	  !faceglobalnodes = face_global_nodes(bss, sele)
-	  !do i = 1,snloc
-		!globnod = faceglobalnodes(i)
-		!q_star = (0.053 / (d_star) ** 0.3)) * (((node_val(bss, globnod) / (density * R * g * d)) / t_crit) - 1) ** 2.1
-		!call set(bedload_flux, globnod, ((R * g * (d ** 3)) ** 0.5) * q_star * node_val(bss, globnod))
-	  !end do
-	  !end do
-	  !deallocate( faceglobalnodes )
-	  !end if

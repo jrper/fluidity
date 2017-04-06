@@ -87,7 +87,7 @@ subroutine calculate_surface_horizontal_divergence(state, s_field)
     character(len = OPTION_PATH_LEN) :: base_path
     integer, dimension(2) :: nsurface_ids
     integer, dimension(:), allocatable :: surface_ids
-    real :: beta
+    real :: beta, smoothing_length
         
     source_field => vector_source_field(state, s_field)
     positions => extract_vector_field(state, "Coordinate")
@@ -99,9 +99,10 @@ subroutine calculate_surface_horizontal_divergence(state, s_field)
     allocate(surface_ids(nsurface_ids(1)))
     call get_option(trim(base_path) // "/surface_ids", surface_ids)
     call get_option(trim(base_path) // "/beta", beta, default=1.0)
+    call get_option(trim(base_path) // "/smoothing_length", smoothing_length, default=1.0)
       
     call surface_horizontal_divergence(source_field, positions, s_field,&
-         beta, surface_ids = surface_ids,&
+         beta, smoothing_length, surface_ids = surface_ids,&
          option_path=base_path)
       
     deallocate(surface_ids)

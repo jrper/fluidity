@@ -1597,8 +1597,12 @@ surface_horizontal_divergence_algorithm =
          element surface_ids {
             integer_vector
          },         
-         ## coefficient for integration by parts on rhs. 
+         ## Coefficient for integration by parts on rhs. 
          element beta {
+            real
+         },
+         ## Smoothing length for horizontal divergence field. Suggested to the element size on surface. 
+         element smoothing_length {
             real
          },
          element solver {
@@ -1617,6 +1621,10 @@ bedload_flux_algorithm =
          element surface_ids {
             integer_vector
          },         
+         ## FRICTION ANGLE OF THE SEDIMENT, which is in the range [30 - 50 ] degrees
+         element angle_of_repose {
+            real
+         },              
          element transport_model {            
             element meyer_peter_muller {
                empty
@@ -1625,7 +1633,10 @@ bedload_flux_algorithm =
                empty
             }|
             element van_rijn {    
-               empty            
+               empty
+            }|            
+            element engelund_fredsoe {    
+               empty               
 	    }
          }
          }      
