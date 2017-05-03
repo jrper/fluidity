@@ -2219,6 +2219,12 @@ a horizontal vector living on the specified surface.</a:documentation>
         <a:documentation>FRICTION ANGLE OF THE SEDIMENT, which is in the range [30 - 50 ] degrees</a:documentation>
         <ref name="real"/>
       </element>
+      <optional>
+        <element name="avalanche_factor">
+          <a:documentation>Acceleration factor for avalanche model (default: 1)</a:documentation>
+          <ref name="real"/>
+        </element>
+      </optional>
       <element name="transport_model">
         <choice>
           <element name="meyer_peter_muller">

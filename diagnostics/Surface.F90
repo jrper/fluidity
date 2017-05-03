@@ -89,6 +89,8 @@ subroutine calculate_surface_horizontal_divergence(state, s_field)
     integer, dimension(:), allocatable :: surface_ids
     real :: beta, smoothing_length
         
+    ewrite(1,*) "JN - In calculate_surface_horizontal_divergence"
+
     source_field => vector_source_field(state, s_field)
     positions => extract_vector_field(state, "Coordinate")
     
@@ -107,7 +109,9 @@ subroutine calculate_surface_horizontal_divergence(state, s_field)
       
     deallocate(surface_ids)
     
-  end subroutine calculate_surface_horizontal_divergence
+    ewrite_minmax(s_field)
+    !!ewrite(1,*) 'JN - GOT HERE'
 
+  end subroutine calculate_surface_horizontal_divergence
   
 end module surface_diagnostics

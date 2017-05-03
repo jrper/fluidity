@@ -1624,7 +1624,11 @@ bedload_flux_algorithm =
          ## FRICTION ANGLE OF THE SEDIMENT, which is in the range [30 - 50 ] degrees
          element angle_of_repose {
             real
-         },              
+         },
+         ## Acceleration factor for avalanche model (default: 1)
+         element avalanche_factor {
+            real
+         }?,               
          element transport_model {            
             element meyer_peter_muller {
                empty
