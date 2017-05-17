@@ -72,6 +72,7 @@ module fluids_module
   use free_surface_module
   use momentum_diagnostic_fields, only: calculate_densities
   use sediment_diagnostics, only: calculate_sediment_flux
+  use bedload_diagnostics, only: calculate_bedload_flux
   use dqmom
   use diagnostic_fields_wrapper
   use checkpoint
@@ -418,8 +419,21 @@ contains
     ! initialise the multimaterial fields
     call initialise_diagnostic_material_properties(state)
 
+    ! Initialise KEPS
+    if (have_option("/material_phase::water/subgridscale_parameterisations/k-epsilon")) then
+        call keps_advdif_diagnostics(state(1))
+    end if
+
+    ! Initialise sediment (suspended) flux
+    if (have_option("/material_phase::water/sediment")) then
+        call calculate_diagnostic_variables(State)
+        call set_boundary_conditions_values(state, shift_time=.true.)
+        call calculate_sediment_flux(state(1))
+    end if
+
     call calculate_diagnostic_variables(State)
     call calculate_diagnostic_variables_new(state)
+
     ! This is mostly to ensure that the photosynthetic radiation
     ! has a non-zero value before the first adapt.
     if (have_option("/ocean_biology")) then
