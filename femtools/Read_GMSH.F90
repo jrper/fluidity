@@ -95,7 +95,6 @@ contains
     type(GMSHnode), pointer :: nodes(:)
     type(GMSHelement), pointer :: elements(:), faces(:)
 
-
     ! If running in parallel, add the process number
     if(isparallel()) then
        lfilename = trim(parallel_filename(filename)) // ".msh"
