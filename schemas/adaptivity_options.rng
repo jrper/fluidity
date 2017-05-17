@@ -2409,6 +2409,7 @@ the automatic diagnostics wrappers.</a:documentation>
                     </zeroOrMore>
                   </element>
                   <ref name="stress_free_field_algorithm"/>
+                  <ref name="vector_python_diagnostic_algorithm"/>
                 </choice>
                 <element name="mesh">
                   <attribute name="name">

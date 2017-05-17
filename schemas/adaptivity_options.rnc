@@ -1987,6 +1987,8 @@ mesh_adaptivity_options =
                       }
                    |
                       stress_free_field_algorithm
+                   |
+                      vector_python_diagnostic_algorithm
                    ),
                  element mesh {
                    attribute name {  "CoordinateMesh" }
