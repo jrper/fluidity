@@ -36,14 +36,14 @@ module surface_diagnostics
   use state_module
   use field_options
   use diagnostic_source_fields
-  use sediment, only: surface_horizontal_divergence
+  use bedload_diagnostics, only: surface_horizontal_divergence, surface_elevation_smoothing
   use surface_integrals
   
   implicit none
   
   private
   
-  public :: calculate_grad_normal, calculate_surface_horizontal_divergence
+  public :: calculate_grad_normal, calculate_surface_horizontal_divergence, calculate_surface_elevation_smoothing
   
 contains
   
@@ -101,7 +101,7 @@ subroutine calculate_surface_horizontal_divergence(state, s_field)
     allocate(surface_ids(nsurface_ids(1)))
     call get_option(trim(base_path) // "/surface_ids", surface_ids)
     call get_option(trim(base_path) // "/beta", beta, default=1.0)
-    call get_option(trim(base_path) // "/smoothing_length", smoothing_length, default=1.0)
+    call get_option(trim(base_path) // "/smoothing_length", smoothing_length, default=0.0)
       
     call surface_horizontal_divergence(source_field, positions, s_field,&
          beta, smoothing_length, surface_ids = surface_ids,&
@@ -114,4 +114,40 @@ subroutine calculate_surface_horizontal_divergence(state, s_field)
 
   end subroutine calculate_surface_horizontal_divergence
   
+  subroutine calculate_surface_elevation_smoothing(state, s_field)
+    type(state_type), intent(in) :: state
+    type(scalar_field), intent(inout) :: s_field
+
+    type(scalar_field), pointer :: source_field
+    type(vector_field), pointer :: positions
+
+    character(len = OPTION_PATH_LEN) :: base_path
+    integer, dimension(2) :: nsurface_ids
+    integer, dimension(:), allocatable :: surface_ids
+    real :: smoothing_length
+
+    ewrite(1,*) "JN - In calculate_surface_elevation_smoothing"
+
+    source_field => scalar_source_field(state, s_field)
+    positions => extract_vector_field(state, "Coordinate")
+
+    base_path = trim(complete_field_path(s_field%option_path)) // "/algorithm"
+
+    nsurface_ids = option_shape(trim(base_path) // "/surface_ids")
+    assert(nsurface_ids(1) >= 0)
+    allocate(surface_ids(nsurface_ids(1)))
+    call get_option(trim(base_path) // "/surface_ids", surface_ids)
+    call get_option(trim(base_path) // "/smoothing_length", smoothing_length, default=0.0)
+
+    call surface_elevation_smoothing(source_field, positions, s_field,&
+         smoothing_length, surface_ids = surface_ids,&
+         option_path=base_path)
+
+    deallocate(surface_ids)
+
+    ewrite_minmax(s_field)
+    !!ewrite(1,*) 'JN - GOT HERE'
+
+  end subroutine calculate_surface_elevation_smoothing
+
 end module surface_diagnostics

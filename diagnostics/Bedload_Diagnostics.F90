@@ -30,21 +30,31 @@
 module bedload_diagnostics
 
   use fldebug
-  use global_parameters, only : OPTION_PATH_LEN, timestep, dt
+  use global_parameters, only : OPTION_PATH_LEN, FIELD_NAME_LEN, timestep, dt
+  use vector_tools
   use quadrature
   use elements
   use spud
+  use fetools
   use fields
+  use transform_elements
   use state_module
   use field_options
   use sediment, only: get_n_sediment_fields, get_sediment_item
-  !use boundary_conditions
-  !use diagnostic_source_fields
-  !use surface_integrals
+  use sparsity_patterns, only: make_sparsity
+  use sparse_tools, only: csr_matrix, csr_sparsity
+  use solvers, only: petsc_solve
+  use boundary_conditions
+  use halos, only: generate_surface_mesh_halos
+  use field_derivatives
+  use sparse_matrices_fields
+  use state_fields_module
   
   implicit none 
   
-  public  :: calculate_bedload_flux
+  private
+
+  public :: calculate_bedload_flux, surface_horizontal_divergence, surface_elevation_smoothing
   
 contains 
  
@@ -85,6 +95,7 @@ contains
 
           ! extract turbulent viscocity field
           evisc => extract_scalar_field(state, "ScalarEddyViscosity")
+          !evisc => extract_tensor_field(state, "Viscosity")
           ! extract turbulent viscocity field in zero dump
           !if (timestep == 0) then
           !  call get_option("/material_phase::water/subgridscale_parameterisations/k-epsilon/tensor_field::BackgroundViscosity/prescribed/value::WholeMesh/isotropic/constant", zevisc)
@@ -185,7 +196,6 @@ contains
                 !ewrite(1,*) 'JN - BSS NODES IN FACE ONE:', snloc
 
                 !!ewrite(1,*) '******'
-
                 !!ewrite(1,*) 'JN - BSS ELEMENT:', i_ele
                 !!ewrite(1,*) 'JN - V_FIELD SURF ELE:', surface_elements((i_ele))
                 !ewrite(1,*) 'JN - BSS ELEMENTS:', surface_element_count(bss)
@@ -238,11 +248,11 @@ contains
                     !!ewrite(1,*) 'JN - DIMENSIONLESS PARTICLE DIAMETER:', d_star
 
                     if (have_option("/material_phase::water/subgridscale_parameterisations/k-epsilon")) then
-                        if (timestep == 0) then
-                            t_crit = 0.00
-                        else
+                        !if (timestep == 0) then
+                        !    t_crit = 0.00
+                        !else
                             t_crit(1:sndim) = (0.30 / (1 + 1.2*d_star)) + 0.055*(1-exp(-0.020*d_star)) !Soulsby (1997)
-                        end if
+                        !end if
                     else
                         t_crit(1:sndim) = 0.05
                         !t_crit = 0.00
@@ -272,7 +282,8 @@ contains
 
                     end if
 
-                    !!ewrite(1,*) 'JN - QSTAR:', q_star
+                    !q_star = 0.0
+                    !ewrite(1,*) 'JN - QSTAR:', q_star
 
                     call set(v_field, globnod, q_star * sqrt(R * g * (d ** 3)))
                     !!ewrite(1,*) 'JN - BEDLOAD RATE:', node_val(v_field, globnod)
@@ -295,7 +306,7 @@ contains
 
                     end if
 
-                    if ((repose /= 0.0) .and. (timestep /= 0.0)) then
+                    if ((repose /= 0.0) .and. (dt /= 0.0)) then
                         if (tan(abs(b)) > tan(repose*PI/180)) then
                             q_aval(1:sndim) = (/ q_aval_x, q_aval_y /)
                             !!ewrite(1,*) 'JN - Q_AVAL:', q_aval
@@ -308,8 +319,8 @@ contains
 
                             if (b < 0.0) then
 
-                                call addto(v_field, 1, globnod, acc_aval*q_aval_x/timestep)
-                                call addto(v_field, 2, globnod, acc_aval*q_aval_y/timestep)
+                                call addto(v_field, 1, globnod, acc_aval*q_aval_x/dt)
+                                call addto(v_field, 2, globnod, acc_aval*q_aval_y/dt)
 
                                 !ewrite(1,*) 'JN - SIGNS:', sign(1.0, node_val(v_field,1,globnod))
                                 !ewrite(1,*) 'JN - SIGNS:', sign(1.0, node_val(v_field,2,globnod))
@@ -332,8 +343,8 @@ contains
 
                             elseif (b > 0.0) then
 
-                                call addto(v_field, 1, globnod, -acc_aval*q_aval_x/timestep)
-                                call addto(v_field, 2, globnod, -acc_aval*q_aval_y/timestep)
+                                call addto(v_field, 1, globnod, -acc_aval*q_aval_x/dt)
+                                call addto(v_field, 2, globnod, -acc_aval*q_aval_y/dt)
 
                                 !do k = 1, sndim
                                 !if (sign(1.0, node_val(v_field, k, globnod)) > 0.0) then
@@ -452,10 +463,29 @@ contains
         !!ewrite(1,*) 'JN - X2:', x2
         !!ewrite(1,*) 'JN - X1:', x1
 
+        if (x2 > x1) then
+
+            y2 = node_val(X, 2, faceglobalnodes(2))
+            y1 = node_val(X, 2, faceglobalnodes(1))
+
+        else
+
+            x2 = x2 + x1
+            x1 = x2 - x1
+            x2 = x2 - x1
+
+            y2 = node_val(X, 2, faceglobalnodes(1))
+            y1 = node_val(X, 2, faceglobalnodes(2))
+
+        end if
+
+        !!ewrite(1,*) 'JN - NEW X2:', x2
+        !!ewrite(1,*) 'JN - NEW X1:', x1
+
         !y2 = node_val(X, 2, maxval(faceglobalnodes))
         !y1 = node_val(X, 2, minval(faceglobalnodes))
-        y2 = node_val(X, 2, faceglobalnodes(2))
-        y1 = node_val(X, 2, faceglobalnodes(1))
+        !y2 = node_val(X, 2, faceglobalnodes(2))
+        !y1 = node_val(X, 2, faceglobalnodes(1))
         !y2 = node_val(X, 2, nl)
         !y1 = node_val(X, 2, nf)
         !!ewrite(1,*) 'JN - Y2:', y2
@@ -476,7 +506,8 @@ contains
         ty = dy / length
         !!ewrite(1,*) 'JN - TY:', ty
 
-        b = atan2(ty,tx)
+        !b = atan2(ty,tx)
+        b = atan(ty/tx)
         !!ewrite(1,*) 'JN - BOTTOM SLOPE RAD:', b
         !!ewrite(1,*) 'JN - BOTTOM SLOPE DEG:', b * 180/PI
 
@@ -498,5 +529,501 @@ contains
         deallocate(faceglobalnodes)
 
     end subroutine avalanche_2d
+
+    subroutine surface_horizontal_divergence(source, positions, output, beta, smoothing_length, surface_ids, option_path)
+    !!< Return a field containing:
+    !!< div_HS source
+    !!< where div_hs is a divergence operator restricted to the surface and
+    !!< of spatial dimension one degree lower than the full mesh.
+
+        type(vector_field), intent(in) :: source
+        type(vector_field), intent(in) :: positions
+        type(scalar_field), intent(inout) :: output
+        real, intent(in) :: beta, smoothing_length
+        integer, dimension(:), intent(in) :: surface_ids
+        character(len=*), optional, intent(in) :: option_path
+
+        type(mesh_type) :: surface_mesh, source_surface_mesh, output_surface_mesh
+
+        integer :: i, idx
+
+        integer, dimension(surface_element_count(output)) :: surface_elements
+        integer, dimension(:), pointer :: surface_nodes, source_surface_nodes, output_surface_nodes
+        real :: face_area, face_integral
+
+        type(vector_field) :: surface_source, surface_positions
+        type(scalar_field) :: surface_output
+        real, dimension(mesh_dim(positions))  :: val
+
+        !interface
+        !    subroutine generate_free_surface_halos(full_mesh, surface_mesh, surface_nodes)
+        !        use fields
+        !        type(mesh_type), intent(in):: full_mesh
+        !        type(mesh_type), intent(inout):: surface_mesh
+        !        integer, dimension(:), intent(in):: surface_nodes
+        !    end subroutine
+        !end interface
+
+        call zero(output)
+
+        !!! get the relevant surface. This wastes a bit of memory.
+        idx=1
+        do i = 1, surface_element_count(output)
+            if (any(surface_ids == surface_element_id(positions, i))) then
+                surface_elements(idx)=i
+                idx=idx+1
+            end if
+        end do
+        !!ewrite(1,*) 'JN - SURFACE ID:', surface_ids
+
+        !!! make the surface meshes
+        call create_surface_mesh(surface_mesh,  surface_nodes, &
+         positions%mesh, surface_elements=surface_elements(:idx-1), &
+         name='CoordinateSurfaceMesh')
+        call create_surface_mesh(source_surface_mesh,  source_surface_nodes, &
+         source%mesh, surface_elements=surface_elements(:idx-1), &
+         name='SourceSurfaceMesh')
+        call create_surface_mesh(output_surface_mesh,  output_surface_nodes, &
+         output%mesh, surface_elements=surface_elements(:idx-1), &
+         name='OutputSurfaceMesh')
+
+        call generate_surface_mesh_halos(output%mesh, output_surface_mesh, output_surface_nodes)
+
+        call add_faces(surface_mesh)
+        call add_faces(source_surface_mesh, surface_mesh)
+        call add_faces(output_surface_mesh, surface_mesh)
+
+        call allocate(surface_positions,mesh_dim(surface_mesh),surface_mesh,&
+         "Coordinates")
+        call allocate(surface_source,mesh_dim(surface_mesh),source_surface_mesh,&
+         "Source")
+        call allocate(surface_output,output_surface_mesh,"Divergence")
+
+        !!ewrite(1,*) 'JN - POSITIONS (FIELD) DIM:', mesh_dim(positions)
+        !!ewrite(1,*) 'JN - POSITIONS (SURFACE) DIM:', mesh_dim(surface_mesh)
+        !!ewrite(1,*) 'JN - OUTPUT FIELD DIM:', mesh_dim(output)
+        !!ewrite(1,*) 'JN - OUTPUT (SURFACE) DIM:', mesh_dim(surface_output)
+        !!ewrite(1,*) 'JN - ELEMENTS OF OUTPUT MESH:', element_count(output_surface_mesh)
+        !!ewrite(1,*) 'JN - NODES OF OUTPUT MESH:', output_surface_nodes
+        !!ewrite(1,*) '******'
+
+        do i=1,size(surface_nodes)
+            val=node_val(positions,surface_nodes(i))
+            call set(surface_positions,i,val(:mesh_dim(surface_mesh)))
+        end do
+
+        do i=1,size(source_surface_nodes)
+            val=node_val(source,source_surface_nodes(i))
+            call set(surface_source,i,val(:mesh_dim(surface_mesh)))
+        end do
+
+        if (present(option_path)) then
+            surface_output%option_path = option_path
+        else
+            surface_output%option_path = output%option_path
+        end if
+
+        !!! now do the low dimensional divergence operation
+
+        call get_div(surface_source,surface_positions,surface_output,beta,smoothing_length)
+
+        do i=1,size(output_surface_nodes)
+            call set(output,output_surface_nodes(i),node_val(surface_output,i))
+        end do
+
+        !!! I *think* this surfices for parallel, due to the relatively locality of the divergence operator
+
+        call halo_update(output)
+
+        call deallocate(surface_positions)
+        call deallocate(surface_source)
+        call deallocate(surface_output)
+
+        call deallocate(surface_mesh)
+        call deallocate(source_surface_mesh)
+        call deallocate(output_surface_mesh)
+
+        deallocate(surface_nodes, source_surface_nodes, output_surface_nodes)
+
+   end subroutine surface_horizontal_divergence
+
+   subroutine get_div(source,positions,output,beta,smoothing_length)
+
+        type(vector_field), intent(in) :: source, positions
+        type(scalar_field), intent(inout) :: output
+        real, intent(in) ::  beta, smoothing_length
+
+        type(element_type), pointer :: shape
+        integer, dimension(:), pointer :: nodes
+
+        type(csr_matrix) :: M
+        type(csr_sparsity) :: sparsity
+        type(scalar_field) :: rhs
+        !type(scalar_field) :: masslump
+        integer, dimension(:), allocatable :: faceglobalnodes
+        integer :: i, j, ele, face, dim, globnod
+
+        real, dimension(ele_ngi(output,1)) :: detwei
+        real, dimension(face_ngi(positions,1)) :: sdetwei, flux
+        real, dimension(mesh_dim(positions), face_ngi(positions,1)) :: normal
+        real, dimension(ele_loc(positions,1), ele_ngi(positions,1), mesh_dim(positions)) :: do_t
+
+        sparsity = make_sparsity(output%mesh, output%mesh, "SparsityMat")
+
+        call allocate(M, sparsity, name = "MassMat")
+        call allocate(rhs, output%mesh, "RHS")
+        !call allocate(masslump, output%mesh, 'MassLump')
+
+        call zero(M)
+        call zero(rhs)
+        call zero(output)
+        !call zero(masslump)
+
+        !!ewrite(1,*) 'JN - SOURCE DIM:', mesh_dim(source)
+        !!ewrite(1,*) 'JN - POSITIONS DIM:', mesh_dim(positions)
+        !!ewrite(1,*) 'JN - OUTPUT DIM:', mesh_dim(output)
+        !!ewrite(1,*) 'JN - POSITIONS ELE LOC:', ele_loc(positions,1)
+        !!ewrite(1,*) 'JN - POSITIONS ELE GAUSS POINTS:', ele_ngi(positions,1)
+        !!ewrite(1,*) 'JN - POSITIONS FACE LOC:', face_loc(positions,1)
+        !!ewrite(1,*) 'JN - POSITIONS FACE GAUSS POINTS:', face_ngi(positions,1)
+
+        do ele = 1, element_count(output)
+        !!! element loop
+
+        !!ewrite(1,*) 'JN - ELEMENT:', ele
+        !!ewrite(1,*) 'JN - VAL IN ELEMENT:', ele_val_at_quad(source, ele)
+        !!ewrite(1,*) 'JN - ELEMENT LOC:', ele_loc(output,ele)
+
+            shape => ele_shape(output,ele)
+            !ewrite(1,*) 'JN - SHAPES IN ELEMENT:', shape
+            nodes => ele_nodes(output,ele)
+            !!ewrite(1,*) 'JN - NODES IN ELEMENT:', nodes
+
+            call transform_to_physical(positions, ele, shape=shape, dshape=do_t, detwei=detwei)
+            !! build the mass matrix
+            call addto(M,nodes,nodes,shape_shape(shape,shape,detwei)+((smoothing_length)**2)*dshape_dot_dshape(do_t,do_t,detwei))
+            !ewrite(1,*) 'JN - MASS MATRIX:', node_val(M, ele)
+
+            !! generate element rhs
+            call addto(rhs, nodes, get_div_element(ele_loc(output,ele)))
+            !!ewrite(1,*) 'JN - RHS VECTOR:', node_val(RHS, ele)
+
+            !! build the lumped mass in the elements
+            !call addto(masslump,nodes,shape_shape(shape,shape,detwei))
+            !do i = 1,size(nodes)
+                !call addto(masslump,nodes(i),sum(detwei)/ele_loc(output,ele))
+            !end do
+        end do
+
+        do face = 1, face_count(source)
+        !!! face loop
+
+        !!ewrite(1,*) 'JN - FACE:', face
+        !!ewrite(1,*) 'JN - VAL IN FACE:', face_val_at_quad(source, face)
+        !!ewrite(1,*) 'JN - FACE LOC:', face_loc(output,face)
+
+            shape => face_shape(positions,face)
+            !ewrite(1,*) 'JN - SHAPES IN FACE:', shape
+
+            !!ewrite(1,*) 'JN - NODES IN FACE:', face_global_nodes(source,face)
+
+            call transform_facet_to_physical(positions, face, detwei_f=sdetwei, normal=normal)
+            !! this could be cleverer
+            !!ewrite(1,*) 'JN - NORMAL:', normal
+            flux = sum(face_val_at_quad(source, face) * normal, dim=1)
+            !! generate_element_rhs
+            call addto(rhs, face_global_nodes(source,face), get_div_face(face_loc(output,face)))
+            !!ewrite(1,*) 'JN - RHS VECTOR PLUS FACE CONTRIBUTION:', node_val(RHS, ele)
+
+            !! build the lumped mass in the faces
+            !call addto(masslump,face_global_nodes(source,face),shape_shape(shape,shape,detwei))
+            !call addto(masslump,face_global_nodes(source,face),sum(shape_shape(shape,shape,detwei),1))
+        end do
+
+        call petsc_solve(output,M,rhs)
+        !call petsc_solve(output,lumped(M),rhs)
+        !call petsc_solve(output,masslump,rhs)
+
+        !!check continuity in output mesh and divide by the inverse global lumped mass
+        !if(continuity(output)>=0) then
+        !    where (masslump%val/=0.0)
+        !        masslump%val=1./masslump%val
+        !    end where
+        !    call scale(rhs, masslump)
+        !    call deallocate(masslump)
+        !end if
+
+        !call set(output,rhs)
+
+        !allocate(faceglobalnodes(1:size(nodes)))
+        !do j = 1, element_count(output)
+        !    faceglobalnodes = face_global_nodes(output,j)
+            !!do i = 1, size(nodes)
+            !!ewrite(1,*) 'JN - BEDLOAD DIV:', node_val(output, nodes(i))
+        !        globnod = faceglobalnodes(i)
+        !        ewrite(1,*) 'JN - BEDLOAD DIV:', node_val(output, globnod)
+            !!end do
+        !end do
+        !deallocate(faceglobalnodes)
+
+        call deallocate(M)
+        call deallocate(sparsity)
+        call deallocate(rhs)
+
+        contains
+
+        function get_div_element(nloc) result(local_rhs)
+
+            integer ::nloc
+            real, dimension(nloc) :: local_rhs
+            real, dimension(mesh_dim(output), mesh_dim(output), ele_ngi(output, ele)) :: source_grad
+
+            source_grad = ele_grad_at_quad(source, ele, do_t)
+            local_rhs = -beta * dshape_dot_vector_rhs(do_t, ele_val_at_quad(source,ele), detwei)
+            do dim=1, mesh_dim(output)
+                local_rhs = local_rhs + (1.0-beta) * shape_rhs(shape, source_grad(dim, dim, :) * detwei)
+            end do
+
+        end function get_div_element
+
+        function get_div_face(nloc) result(local_rhs)
+
+            integer:: nloc
+            real, dimension(nloc) :: local_rhs
+
+            local_rhs = beta * shape_rhs(shape, flux * sdetwei)
+
+        end function get_div_face
+
+    end subroutine get_div
+
+    subroutine surface_elevation_smoothing(source, positions, output, smoothing_length, surface_ids, option_path)
+    !!< Return a field containing:
+    !!< w = zn+1 - zn / dt
+    !!< where w is a grid velocity of the smoothed coordinate restricted to the surface and
+    !!< of spatial dimension one degree lower than the full mesh.
+
+        type(scalar_field), intent(in) :: source
+        type(vector_field), intent(in) :: positions
+        type(scalar_field), intent(inout) :: output
+        real, intent(in) :: smoothing_length
+        integer, dimension(:), intent(in) :: surface_ids
+        character(len=*), optional, intent(in) :: option_path
+
+        type(mesh_type) :: surface_mesh, source_surface_mesh, output_surface_mesh
+
+        integer :: i, idx
+
+        integer, dimension(surface_element_count(output)) :: surface_elements
+        integer, dimension(:), pointer :: surface_nodes, source_surface_nodes, output_surface_nodes
+        real :: face_area, face_integral
+
+        type(vector_field) :: surface_positions
+        type(scalar_field) :: surface_source, surface_elevation, surface_output
+        real, dimension(mesh_dim(positions)) :: val
+
+        call zero(output)
+
+        !!! get the relevant surface. This wastes a bit of memory.
+        idx=1
+        do i = 1, surface_element_count(output)
+            if (any(surface_ids == surface_element_id(positions, i))) then
+                surface_elements(idx)=i
+                idx=idx+1
+            end if
+        end do
+        !!ewrite(1,*) 'JN - SURFACE ID:', surface_ids
+
+        !!! make the surface meshes
+        call create_surface_mesh(surface_mesh,  surface_nodes, &
+         positions%mesh, surface_elements=surface_elements(:idx-1), &
+         name='CoordinateSurfaceMesh')
+        call create_surface_mesh(source_surface_mesh,  source_surface_nodes, &
+         source%mesh, surface_elements=surface_elements(:idx-1), &
+         name='SourceSurfaceMesh')
+        call create_surface_mesh(output_surface_mesh,  output_surface_nodes, &
+         output%mesh, surface_elements=surface_elements(:idx-1), &
+         name='OutputSurfaceMesh')
+
+        call generate_surface_mesh_halos(output%mesh, output_surface_mesh, output_surface_nodes)
+
+        call add_faces(surface_mesh)
+        call add_faces(source_surface_mesh, surface_mesh)
+        call add_faces(output_surface_mesh, surface_mesh)
+
+        call allocate(surface_positions,mesh_dim(surface_mesh),surface_mesh,"Coordinates")
+        call allocate(surface_elevation,surface_mesh,"Elevation")
+        call allocate(surface_source,source_surface_mesh,"Source")
+        call allocate(surface_output,output_surface_mesh,"GridVelocity")
+
+        !!ewrite(1,*) 'JN - POSITIONS (FIELD) DIM:', mesh_dim(positions)
+        !!ewrite(1,*) 'JN - POSITIONS (SURFACE) DIM:', mesh_dim(surface_mesh)
+        !!ewrite(1,*) 'JN - OUTPUT FIELD DIM:', mesh_dim(output)
+        !!ewrite(1,*) 'JN - OUTPUT (SURFACE) DIM:', mesh_dim(surface_output)
+        !!ewrite(1,*) 'JN - ELEMENTS OF OUTPUT MESH:', element_count(output_surface_mesh)
+        !!ewrite(1,*) 'JN - NODES OF OUTPUT MESH:', output_surface_nodes
+        !!ewrite(1,*) '******'
+
+        do i=1,size(surface_nodes)
+            val=node_val(positions,surface_nodes(i))
+            call set(surface_positions,i,val(:mesh_dim(surface_mesh)))
+        end do
+
+        do i=1,size(surface_nodes)
+            val=node_val(positions,surface_nodes(i))
+            call set(surface_elevation,i,val(mesh_dim(source)))
+        end do
+
+        do i=1,size(source_surface_nodes)
+            val=node_val(source,source_surface_nodes(i))
+            call set(surface_source,i,val(mesh_dim(surface_mesh)))
+        end do
+
+        if (present(option_path)) then
+            surface_output%option_path = option_path
+        else
+            surface_output%option_path = output%option_path
+        end if
+
+        call get_coordinate_smooth(surface_source,surface_positions,surface_elevation,surface_output,smoothing_length)
+
+        do i=1,size(output_surface_nodes)
+            call set(output,output_surface_nodes(i),node_val(surface_output,i))
+        end do
+
+        call halo_update(output)
+
+        call deallocate(surface_positions)
+        call deallocate(surface_elevation)
+        call deallocate(surface_source)
+        call deallocate(surface_output)
+
+        call deallocate(surface_mesh)
+        call deallocate(source_surface_mesh)
+        call deallocate(output_surface_mesh)
+
+        deallocate(surface_nodes, source_surface_nodes, output_surface_nodes)
+
+  end subroutine surface_elevation_smoothing
+
+  subroutine get_coordinate_smooth(source, positions, elevation, output, smoothing_length)
+
+        type(vector_field), intent(in) :: positions
+        type(scalar_field), intent(in) :: source, elevation
+        type(scalar_field), intent(inout) :: output
+        real, intent(in) :: smoothing_length
+
+        type(element_type), pointer :: shape
+        integer, dimension(:), pointer :: nodes
+
+        type(csr_matrix) :: M
+        type(csr_sparsity) :: sparsity
+        type(scalar_field) :: rhs
+        !integer, dimension(:), allocatable :: faceglobalnodes
+        !integer :: face, globnod
+        integer :: ele, dim, i
+
+        real, dimension(ele_ngi(output,1)) :: detwei
+        !real, dimension(face_ngi(positions,1)) :: sdetwei, flux
+        !real, dimension(mesh_dim(positions), face_ngi(positions,1)) :: normal
+        real, dimension(ele_loc(positions,1), ele_ngi(positions,1), mesh_dim(positions)) :: do_t
+
+        sparsity = make_sparsity(output%mesh, output%mesh, "SparsityMat")
+
+        call allocate(M, sparsity, name = "MassMat")
+        call allocate(rhs, output%mesh, "RHS")
+
+        call zero(M)
+        call zero(rhs)
+        call zero(output)
+
+        !!ewrite(1,*) 'JN - SOURCE DIM:', mesh_dim(source)
+        !!ewrite(1,*) 'JN - POSITIONS DIM:', mesh_dim(positions)
+        !!ewrite(1,*) 'JN - OUTPUT DIM:', mesh_dim(output)
+        !!ewrite(1,*) 'JN - POSITIONS ELE LOC:', ele_loc(positions,1)
+        !!ewrite(1,*) 'JN - POSITIONS ELE GAUSS POINTS:', ele_ngi(positions,1)
+        !!ewrite(1,*) 'JN - POSITIONS FACE LOC:', face_loc(positions,1)
+        !!ewrite(1,*) 'JN - POSITIONS FACE GAUSS POINTS:', face_ngi(positions,1)
+
+        do ele = 1, element_count(output)
+        !!! element loop
+
+        !!ewrite(1,*) 'JN - ELEMENT:', ele
+        !!ewrite(1,*) 'JN - VAL IN ELEMENT:', ele_val_at_quad(source, ele)
+        !!ewrite(1,*) 'JN - ELEMENT LOC:', ele_loc(output,ele)
+
+            shape => ele_shape(output,ele)
+            !ewrite(1,*) 'JN - SHAPES IN ELEMENT:', shape
+            nodes => ele_nodes(output,ele)
+            !!ewrite(1,*) 'JN - NODES IN ELEMENT:', nodes
+
+            call transform_to_physical(positions, ele, shape=shape, dshape=do_t, detwei=detwei)
+            !! build the mass matrix
+            call addto(M,nodes,nodes,shape_shape(shape,shape,detwei)+((smoothing_length)**2)*dshape_dot_dshape(do_t,do_t,detwei))
+            !ewrite(1,*) 'JN - MASS MATRIX:', node_val(M, ele)
+
+            !! generate element rhs
+            call addto(rhs, nodes, get_coordinate_smooth_element(ele_loc(output,ele)))
+            !!ewrite(1,*) 'JN - RHS VECTOR:', node_val(RHS, ele)
+
+        end do
+
+        !!do face = 1, face_count(source)
+        !!! face loop
+
+        !!ewrite(1,*) 'JN - FACE:', face
+        !!ewrite(1,*) 'JN - VAL IN FACE:', face_val_at_quad(source, face)
+        !!ewrite(1,*) 'JN - FACE LOC:', face_loc(output,face)
+
+            !!shape => face_shape(positions,face)
+            !ewrite(1,*) 'JN - SHAPES IN FACE:', shape
+
+            !!ewrite(1,*) 'JN - NODES IN FACE:', face_global_nodes(source,face)
+
+            !!call transform_facet_to_physical(positions, face, detwei_f=sdetwei, normal=normal)
+            !! this could be cleverer
+            !!ewrite(1,*) 'JN - NORMAL:', normal
+            !!flux = sum(face_val_at_quad(source, face) * normal, dim=1)
+            !! generate_element_rhs
+            !!call addto(rhs, face_global_nodes(source,face), get_coordinate_smooth_face(face_loc(output,face)))
+            !!ewrite(1,*) 'JN - RHS VECTOR PLUS FACE CONTRIBUTION:', node_val(RHS, ele)
+
+        !!end do
+
+        call petsc_solve(output,M,rhs)
+
+        call addto(output,elevation,-1.0)
+
+        if (dt /= 0.0) then
+            call scale(output, 1.0/dt)
+        else
+            call scale(output, 1.0)
+        end if
+
+        call deallocate(M)
+        call deallocate(sparsity)
+        call deallocate(rhs)
+
+        contains
+
+        function get_coordinate_smooth_element(nloc) result(local_rhs)
+
+        integer ::nloc
+        real, dimension(nloc) :: local_rhs
+
+        local_rhs = shape_rhs(shape, (ele_val_at_quad(elevation,ele) + ele_val_at_quad(source,ele) * dt) * detwei)
+
+        end function get_coordinate_smooth_element
+
+        !!function get_coordinate_smooth_face(nloc) result(local_rhs)
+
+        !!integer:: nloc
+        !!real, dimension(nloc) :: local_rhs
+
+        !!local_rhs = beta * shape_rhs(shape, flux * sdetwei)
+
+        !!end function get_coordinate_smooth_face
+
+   end subroutine get_coordinate_smooth
 
 end module bedload_diagnostics

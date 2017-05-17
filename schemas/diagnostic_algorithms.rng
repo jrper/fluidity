@@ -2194,7 +2194,29 @@ a horizontal vector living on the specified surface.</a:documentation>
         <ref name="real"/>
       </element>
       <element name="smoothing_length">
-        <a:documentation>Smoothing length for horizontal divergence field. Suggested to the element size on surface. </a:documentation>
+        <a:documentation>Smoothing length for horizontal divergence field. Suggested at least equal to the element size on surface. </a:documentation>
+        <ref name="real"/>
+      </element>
+      <element name="solver">
+        <ref name="linear_solver_options_sym"/>
+      </element>
+    </element>
+  </define>
+  <define name="surface_elevation_smoothing_algorithm">
+    <element name="algorithm">
+      <a:documentation>Algorithm calculates the smoothed bed level living on the specified surface.</a:documentation>
+      <attribute name="name">
+        <value>surface_elevation_smoothing</value>
+      </attribute>
+      <attribute name="material_phase_support">
+        <value>single</value>
+      </attribute>
+      <ref name="scalar_source_field"/>
+      <element name="surface_ids">
+        <ref name="integer_vector"/>
+      </element>
+      <element name="smoothing_length">
+        <a:documentation>Smoothing length for bed level. Suggested at least equal to the element size on surface. </a:documentation>
         <ref name="real"/>
       </element>
       <element name="solver">
@@ -2266,6 +2288,9 @@ a horizontal vector living on the specified surface.</a:documentation>
   </define>
   <define name="scalar_diagnostic_algorithms" combine="choice">
     <ref name="surface_horizontal_divergence_algorithm"/>
+  </define>
+  <define name="scalar_diagnostic_algorithms" combine="choice">
+    <ref name="surface_elevation_smoothing_algorithm"/>
   </define>
   <define name="scalar_diagnostic_algorithms" combine="choice">
     <ref name="scalar_temporalmax_algorithm"/>

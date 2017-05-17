@@ -1601,7 +1601,27 @@ surface_horizontal_divergence_algorithm =
          element beta {
             real
          },
-         ## Smoothing length for horizontal divergence field. Suggested to the element size on surface. 
+         ## Smoothing length for horizontal divergence field. Suggested at least equal to the element size on surface. 
+         element smoothing_length {
+            real
+         },
+         element solver {
+            linear_solver_options_sym
+         }
+      }
+   )
+
+surface_elevation_smoothing_algorithm = 
+   (
+      ## Algorithm calculates the smoothed bed level living on the specified surface.
+      element algorithm {
+         attribute name { "surface_elevation_smoothing" },
+         attribute material_phase_support { "single" },
+         scalar_source_field,
+         element surface_ids {
+            integer_vector
+         },                  
+         ## Smoothing length for bed level. Suggested at least equal to the element size on surface. 
          element smoothing_length {
             real
          },
@@ -1654,6 +1674,7 @@ scalar_diagnostic_algorithms |= tensor_second_invariant_algorithm
 scalar_diagnostic_algorithms |= strain_rate_second_invariant_algorithm
 scalar_diagnostic_algorithms |= temporalmin_algorithm
 scalar_diagnostic_algorithms |= surface_horizontal_divergence_algorithm
+scalar_diagnostic_algorithms |= surface_elevation_smoothing_algorithm
 scalar_diagnostic_algorithms |= scalar_temporalmax_algorithm
 scalar_diagnostic_algorithms |= scalar_time_averaged_algorithm
 scalar_diagnostic_algorithms |= scalar_period_averaged_algorithm
