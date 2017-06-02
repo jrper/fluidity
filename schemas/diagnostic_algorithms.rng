@@ -2197,6 +2197,18 @@ a horizontal vector living on the specified surface.</a:documentation>
         <a:documentation>Smoothing length for horizontal divergence field. Suggested at least equal to the element size on surface. </a:documentation>
         <ref name="real"/>
       </element>
+      <optional>
+        <element name="set_to_zero">
+          <a:documentation>Set boundary conditions of surface_horizontal_divergence to zero. </a:documentation>
+          <attribute name="name">
+            <data type="string" datatypeLibrary=""/>
+          </attribute>
+          <element name="surface_ids">
+            <a:documentation>Surface id:</a:documentation>
+            <ref name="integer_vector"/>
+          </element>
+        </element>
+      </optional>
       <element name="solver">
         <ref name="linear_solver_options_sym"/>
       </element>

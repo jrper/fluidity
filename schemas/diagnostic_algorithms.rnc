@@ -1605,6 +1605,14 @@ surface_horizontal_divergence_algorithm =
          element smoothing_length {
             real
          },
+         ## Set boundary conditions of surface_horizontal_divergence to zero. 
+         element set_to_zero {
+            attribute name { string },
+            ## Surface id:
+            element surface_ids {
+               integer_vector
+            }
+            }?,
          element solver {
             linear_solver_options_sym
          }

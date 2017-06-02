@@ -30,6 +30,7 @@
 module surface_diagnostics
 
   use fldebug
+  use futils, only: int2str
   use global_parameters, only : OPTION_PATH_LEN
   use spud
   use fields
@@ -85,8 +86,11 @@ subroutine calculate_surface_horizontal_divergence(state, s_field)
     type(vector_field), pointer :: positions
     
     character(len = OPTION_PATH_LEN) :: base_path
-    integer, dimension(2) :: nsurface_ids
-    integer, dimension(:), allocatable :: surface_ids
+    integer, dimension(2) :: nsurface_ids, bc_nsurface_ids
+    integer, dimension(:), allocatable :: surface_ids, bc_surface_ids, faceglobalnodes
+    integer, dimension(surface_element_count(s_field)) :: bc_surface_elements
+    integer :: i, idx, i_ele, i_bc, i_bc_surf, i_surf, nbcs, snloc, globnod
+
     real :: beta, smoothing_length
         
     ewrite(1,*) "JN - In calculate_surface_horizontal_divergence"
@@ -96,17 +100,69 @@ subroutine calculate_surface_horizontal_divergence(state, s_field)
     
     base_path = trim(complete_field_path(s_field%option_path)) // "/algorithm"    
 
+    ! get surface ids
     nsurface_ids = option_shape(trim(base_path) // "/surface_ids")
     assert(nsurface_ids(1) >= 0)
     allocate(surface_ids(nsurface_ids(1)))
     call get_option(trim(base_path) // "/surface_ids", surface_ids)
     call get_option(trim(base_path) // "/beta", beta, default=1.0)
     call get_option(trim(base_path) // "/smoothing_length", smoothing_length, default=0.0)
-      
+
     call surface_horizontal_divergence(source_field, positions, s_field,&
-         beta, smoothing_length, surface_ids = surface_ids,&
-         option_path=base_path)
-      
+    beta, smoothing_length, surface_ids = surface_ids,&
+    option_path=base_path)
+
+    ! set boundary id's to zero for surface_horizontal_div
+    ! get boundary condition path and number of boundary conditions
+    !nbcs=option_count(trim(base_path)//'/boundary_conditions')
+    !if (nbcs >= 1) then
+
+    if (option_count(trim(base_path)//'/set_to_zero') == 1) then
+
+    ! Loop over boundary conditions for field
+    !boundary_conditions: do i_bc=0, nbcs-1
+
+        ! get boundary conditions surface ids
+        !bc_nsurface_ids=option_shape(trim(base_path)//'/boundary_conditions['//int2str(i_bc)//']/surface_ids')
+        bc_nsurface_ids=option_shape(trim(base_path)//'/set_to_zero[0]/surface_ids')
+        allocate(bc_surface_ids(bc_nsurface_ids(1)))
+        !call get_option(trim(base_path)//'/boundary_conditions['//int2str(i_bc)//']/surface_ids', bc_surface_ids)
+        call get_option(trim(base_path)//'/set_to_zero[0]/surface_ids', bc_surface_ids)
+
+        !bc_surface_id: do i_bc_surf=1, bc_nsurface_ids(1)
+            !surface_id: do i_surf=1, nsurface_ids(1)
+
+                ! get the relevant surface elements
+                idx=0
+                do i = 1, surface_element_count(s_field)
+                    if (any(bc_surface_ids == surface_element_id(s_field, i))) then
+                    idx=idx+1
+                    bc_surface_elements(idx)=i
+                    end if
+                end do
+
+                do i_ele=1, idx
+                    snloc = face_loc(positions, 1)
+
+                    allocate(faceglobalnodes(1:snloc))
+                    faceglobalnodes = face_global_nodes(positions, bc_surface_elements(i_ele))
+
+                    do i = 1, snloc
+                        globnod = faceglobalnodes(i)
+                        call set(s_field,globnod,0.0)
+                    end do
+                    deallocate(faceglobalnodes)
+
+                end do
+
+                !end do surface_id
+                !end do bc_surface_id
+                !end do boundary_conditions
+
+                deallocate(bc_surface_ids)
+
+    end if
+
     deallocate(surface_ids)
     
     ewrite_minmax(s_field)
