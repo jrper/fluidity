@@ -63,6 +63,7 @@ contains
           type(state_type), intent(inout)           :: state
           type(mesh_type)                           :: surface_mesh
           type(scalar_field), pointer               :: sediment_field, evisc
+          type(tensor_field), pointer               :: tvisc
           type(vector_field), pointer               :: x, bss
           type(vector_field), intent(inout)         :: v_field
           type(vector_field)                        :: bedload_flux_surface
@@ -75,14 +76,13 @@ contains
           integer, dimension(:), pointer            :: surface_node_list, s_nodes, ele
           integer, dimension(2)                     :: surface_id_count
           integer, dimension(:), allocatable        :: surface_ids, faceglobalnodes, faceglobalnodes_prev, faceglobalnodes_next, faceglobalnodes_visc
-          real, dimension(:), allocatable           :: t_crit, q_star, q_aval
-          real                                      :: density, R, d, g, d_star, zevisc
+          real, dimension(:), allocatable           :: t_crit, q_star, q_aval, tvisc_val
+          real                                      :: density, R, d, g, zevisc, d_star
           real                                      :: b, repose, q_aval_x, q_aval_y, acc_aval
           real, parameter                           :: PI = 4.D0*DATAN(1.D0)
           character(len = OPTION_PATH_LEN)          :: base_path
 
-          ! Declarations for future FE development
-          !type(tensor_field), pointer               :: visc
+          ! Declarations for future development
           !type(element_type), pointer               :: s_shape
           !integer, dimension(:), pointer            :: surface_element_list, surface_ids, bedload_flux_surface_nodes
           !type(scalar_field)                        :: masslump
@@ -94,15 +94,15 @@ contains
           ewrite(1,*) "JN - In calculate_sediment_bedload_flux"
 
           ! extract turbulent viscocity field
-          evisc => extract_scalar_field(state, "ScalarEddyViscosity")
-          !evisc => extract_tensor_field(state, "Viscosity")
+          !evisc => extract_scalar_field(state, "ScalarEddyViscosity", stat)
+          tvisc => extract_tensor_field(state, "Viscosity", stat)
+
           ! extract turbulent viscocity field in zero dump
           !if (timestep == 0) then
-          !  call get_option("/material_phase::water/subgridscale_parameterisations/k-epsilon/tensor_field::BackgroundViscosity/prescribed/value::WholeMesh/isotropic/constant", zevisc)
+          !  call get_option("/material_phase[0]/subgridscale_parameterisations/k-epsilon/tensor_field::BackgroundViscosity/prescribed/value::WholeMesh/isotropic/constant", zevisc)
           !end if
-
           !ewrite(1,*) 'JN - EDDY VISC IN NODE 10:', zevisc
-          !!ewrite(1,*) 'JN - EDDY VISC IN NODE 10:', node_val(evisc, 10)
+          !ewrite(1,*) 'JN - EDDY VISC IN NODE 10:', node_val(evisc, 10)
 
           ! extract coordinate field
           x => extract_vector_field(state, "Coordinate")
@@ -132,7 +132,7 @@ contains
             call get_option("/physical_parameters/gravity/magnitude", g)
 
             ! get constant density from bed shear stress
-            call get_option("/material_phase::water/vector_field::BedShearStress/diagnostic/density", density)
+            call get_option("/material_phase[0]/vector_field::BedShearStress/diagnostic/density", density)
 
             ! define base path
             base_path = trim(complete_field_path(v_field%option_path))//&
@@ -200,16 +200,24 @@ contains
                 !!ewrite(1,*) 'JN - V_FIELD SURF ELE:', surface_elements((i_ele))
                 !ewrite(1,*) 'JN - BSS ELEMENTS:', surface_element_count(bss)
 
+                allocate(tvisc_val(1:sndim))
                 allocate(t_crit(1:sndim))
                 allocate(q_star(1:sndim))
                 allocate(q_aval(1:sndim))
-                allocate(faceglobalnodes_visc(1:snloc))
+                !allocate(faceglobalnodes_visc(1:snloc))
                 allocate(faceglobalnodes(1:snloc))
-                allocate(faceglobalnodes_next(1:snloc))
-                allocate(faceglobalnodes_prev(1:snloc))
+                !allocate(faceglobalnodes_next(1:snloc))
+                !allocate(faceglobalnodes_prev(1:snloc))
 
-                faceglobalnodes_visc = face_global_nodes(evisc, surface_elements(i_ele))
-                !!ewrite(1,*) 'JN - EDDY VISC GLOBAL NODES IN FACE:', faceglobalnodes_visc
+                ! Reading total viscosity in nodes
+                where (face_val(tvisc, 1, 1, surface_elements(i_ele)) > 0.0)
+                    tvisc_val = face_val(tvisc, 1, 1, surface_elements(i_ele))
+                elsewhere
+                    tvisc_val = 0.0
+                end where
+
+                !faceglobalnodes_visc = face_global_nodes(evisc, surface_elements(i_ele))
+                !ewrite(1,*) 'JN - EDDY VISC GLOBAL NODES IN FACE:', faceglobalnodes_visc
 
                 !do sele=1, surface_element_count(bss)
                 !faceglobalnodes = face_global_nodes(bss, sele)
@@ -230,8 +238,8 @@ contains
 
                 do i = 1, snloc
 
-                    globnod_visc = faceglobalnodes_visc(i)
-                    !!ewrite(1,*) 'JN - EDDY VISC GLOBAL NODE:', globnod_visc
+                    !globnod_visc = faceglobalnodes_visc(i)
+                    !ewrite(1,*) 'JN - EDDY VISC GLOBAL NODE:', globnod_visc
 
                     globnod = faceglobalnodes(i)
                     !!ewrite(1,*) 'JN - BSS GLOBAL NODE:', globnod
@@ -244,10 +252,12 @@ contains
                     !!ewrite(1,*) 'JN - EDDY VISC:', node_val(evisc, globnod_visc)
                     !d_star = 10.0
                     !d_star = d * ((R*g/(zevisc)**2)**1/3)
-                    d_star = d * ((R*g/(node_val(evisc, globnod_visc)**2))**1/3)
+                    !d_star = d * ((R*g/(node_val(evisc, globnod_visc))**2)**1/3)
+                    d_star = d * ((R*g/(tvisc_val(i)**2))**1/3)
+
                     !!ewrite(1,*) 'JN - DIMENSIONLESS PARTICLE DIAMETER:', d_star
 
-                    if (have_option("/material_phase::water/subgridscale_parameterisations/k-epsilon")) then
+                    if (have_option("/material_phase[0]/subgridscale_parameterisations/k-epsilon")) then
                         !if (timestep == 0) then
                         !    t_crit = 0.00
                         !else
@@ -260,15 +270,19 @@ contains
 
                     !!ewrite(1,*) 'JN - T_CRIT:', t_crit
 
+                    if ((norm2(node_val(bss, globnod) / (density * R * g * d)) - norm2(t_crit)) > 0) then
+
                     ! calculate Meyer-Peter and Muller model
                     if (have_option(trim(base_path)//"/transport_model/meyer_peter_muller")) then
 
-                    q_star = 8.0 * ((node_val(bss, globnod) - t_crit / (density * R * g * d))) * ((sqrt(norm2(node_val(bss, globnod))) - sqrt(norm2(t_crit))) / (density * R * g * d))
+                    !q_star = 8.0 * ((node_val(bss, globnod) / (density * R * g * d)) - t_crit) * (sqrt(norm2(node_val(bss, globnod) / (density * R * g * d)) - norm2(t_crit)))
+
+                    q_star = 8.0 * (norm2(node_val(bss, globnod) / (density * R * g * d)) - norm2(t_crit)) ** (3./2.) * (node_val(bss, globnod)/norm2(node_val(bss, globnod)))
 
                     ! calculate Nielsen model
                     elseif (have_option(trim(base_path)//"/transport_model/nielsen")) then
 
-                    q_star = 12.0 * ((node_val(bss, globnod) - t_crit / (density * R * g * d))) * sqrt((norm2(node_val(bss, globnod)) / (density * R * g * d)))
+                    q_star = 12.0 * ((node_val(bss, globnod) / (density * R * g * d)) - t_crit) * (sqrt(norm2(node_val(bss, globnod) / (density * R * g * d))))
 
                     ! calculate Van Rijn model
                     elseif (have_option(trim(base_path)//"/transport_model/van_rijn")) then
@@ -278,11 +292,16 @@ contains
                     ! calculate Engelund and Fresoe model
                     elseif (have_option(trim(base_path)//"/transport_model/engelund_fredsoe")) then
 
-                    q_star = 18.74 * ((node_val(bss, globnod) - t_crit / (density * R * g * d))) * ((sqrt(norm2(node_val(bss, globnod))) - (0.7 * sqrt(norm2(t_crit)))) / (density * R * g * d))
+                    q_star = 18.74 * ((node_val(bss, globnod) / (density * R * g * d)) - t_crit) * ((sqrt(norm2(node_val(bss, globnod) / (density * R * g * d)))) - (0.7 * sqrt(norm2(t_crit))))
 
                     end if
 
-                    !q_star = 0.0
+                    else
+
+                    q_star = 0.0
+
+                    end if
+
                     !ewrite(1,*) 'JN - QSTAR:', q_star
 
                     call set(v_field, globnod, q_star * sqrt(R * g * (d ** 3)))
@@ -314,8 +333,8 @@ contains
                             !q_aval(1:sndim) = (/ abs(q_aval_x), abs(q_aval_y) /)
                             !ewrite(1,*) 'JN - Q_AVAL ABS:', q_aval
 
-                            !!ewrite(1,*) 'JN - BED FLUX PLUS Q_AVAL:', node_val(v_field, globnod) + q_aval
-                            !!ewrite(1,*) 'JN - BED FLUX MINUS Q_AVAL:', node_val(v_field, globnod) - q_aval
+                            !!ewrite(1,*) 'JN - BED FLUX PLUS Q_AVAL:', node_val(v_field, globnod) + q_aval/dt
+                            !!ewrite(1,*) 'JN - BED FLUX MINUS Q_AVAL:', node_val(v_field, globnod) - q_aval/dt
 
                             if (b < 0.0) then
 
@@ -392,10 +411,11 @@ contains
                 deallocate(q_aval)
                 deallocate(q_star)
                 deallocate(t_crit)
-                deallocate(faceglobalnodes_visc)
+                deallocate(tvisc_val)
+                !deallocate(faceglobalnodes_visc)
                 deallocate(faceglobalnodes)
-                deallocate(faceglobalnodes_prev)
-                deallocate(faceglobalnodes_next)
+                !deallocate(faceglobalnodes_prev)
+                !deallocate(faceglobalnodes_next)
 
             end do elements
 
