@@ -4083,7 +4083,12 @@ This is calculated at all boundaries</a:documentation>
         <element name="friction_velocity">
           <a:documentation>density*friction_velocity/yPlus*u 
 This is calculated at all boundaries</a:documentation>
-          <empty/>
+          <optional>
+            <element name="yPlus">
+              <a:documentation>yPlus value (default): 11.06.               </a:documentation>
+              <ref name="real"/>
+            </element>
+          </optional>
         </element>
         <element name="velocity_gradient">
           <a:documentation>nu * (grad(u) + grad(u).T)
