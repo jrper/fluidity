@@ -293,11 +293,17 @@ contains
           call assemble_garcia_1991_reentrainment_ele(state, i_field, i_ele, reentrainment,&
                & x, masslump, surface_element_list, viscosity_pointer,&
                & shear_stress, d50, sink_U, sigma, volume_fraction)
+       case("VanRijn_1984")
+          call assemble_vanrijn_1984_reentrainment_ele(state, i_field, i_ele, reentrainment,&
+               & x, masslump, surface_element_list, viscosity_pointer,&
+               & shear_stress, sink_U, volume_fraction)
        case default
           FLExit("A valid re-entrainment algorithm must be selected")
        end select   
 
     end do elements
+
+    !!ewrite_minmax(reentrainment)
 
     ! invert global lumped mass for continuous fields
     if(continuity(surface_mesh)>=0) then
@@ -307,6 +313,8 @@ contains
        call scale(reentrainment, masslump)
        call deallocate(masslump)
     end if   
+
+    !!ewrite_minmax(reentrainment)
 
     ! check bound of entrainment so that it does not exceed the available sediment in the
     ! bed and is larger than zero.
@@ -403,7 +411,7 @@ contains
        R_p = sqrt(R*g*d**3.0)/face_val_at_quad(viscosity, surface_element_list(i_ele), 1, 1)
     elsewhere 
        R_p = 0.0
-    end where 
+    end where
     
     ! calculate u_star (shear velocity)
     call get_option(trim(shear_stress%option_path)//"/diagnostic/density", density, stat)
@@ -414,6 +422,8 @@ contains
        shear(i_gi) = norm2(shear_quad(:, i_gi))
     end do
     u_star = sqrt(shear/density)
+
+    !!ewrite(1,*) 'JN - friction velocity:', u_star
 
     ! calculate lambda_m
     lambda_m = 1.0 - 0.288 * face_val_at_quad(sigma, surface_element_list(i_ele))
@@ -426,10 +436,14 @@ contains
        Z = 0.0
     end where
 
+    !!ewrite(1,*) 'JN - Z value:', Z
+
     ! calculate reentrainment F*v_s*E
     E = shape_rhs(shape, face_val_at_quad(volume_fraction, surface_element_list(i_ele)) *&
          & face_val_at_quad(sink_U, surface_element_list(i_ele)) * A*Z**5 / (1 + A*Z**5&
          &/0.3) * detwei)  
+
+    !!ewrite(1,*) 'JN - E value:', E
 
     if(continuity(reentrainment)<0) then
        ! DG case.
@@ -439,6 +453,101 @@ contains
     call addto(reentrainment, ele, E)
     
   end subroutine assemble_garcia_1991_reentrainment_ele
+
+  subroutine assemble_vanrijn_1984_reentrainment_ele(state, i_field, i_ele, reentrainment,&
+       & x, masslump, surface_element_list, viscosity, shear_stress, &
+       & sink_U, volume_fraction)
+
+    type(state_type), intent(in)                     :: state
+    integer, intent(in)                              :: i_ele, i_field
+    type(tensor_field), pointer, intent(in)          :: viscosity
+    type(vector_field), intent(in)                   :: x, shear_stress
+    type(scalar_field), intent(inout)                :: masslump
+    type(scalar_field), pointer, intent(inout)       :: reentrainment
+    type(scalar_field), pointer, intent(in)          :: sink_U, volume_fraction
+    integer, dimension(:), pointer, intent(in)       :: surface_element_list
+    type(element_type), pointer                      :: shape
+    integer, dimension(:), pointer                   :: ele
+    real, dimension(ele_ngi(reentrainment, i_ele))   :: detwei
+    real, dimension(ele_loc(reentrainment, i_ele), &
+         & ele_loc(reentrainment, i_ele))            :: invmass
+    real                                             :: R, d, g, density
+    real, dimension(ele_ngi(reentrainment, i_ele))   :: d_star, t_crit_star
+    real, dimension(ele_loc(reentrainment, i_ele))   :: E
+    real, dimension(ele_ngi(reentrainment, i_ele))   :: shear, shear_crit
+    real, dimension(shear_stress%dim, &
+         & ele_ngi(reentrainment, i_ele))            :: shear_quad
+    integer                                          :: i_gi, stat
+
+    ele => ele_nodes(reentrainment, i_ele)
+    shape => ele_shape(reentrainment, i_ele)
+
+    call transform_facet_to_physical(x, surface_element_list(i_ele), detwei)
+
+    if(continuity(reentrainment)>=0) then
+       call addto(masslump, ele, &
+            sum(shape_shape(shape, shape, detwei), 1))
+    else
+       ! In the DG case we will apply the inverse mass locally.
+       invmass=inverse(shape_shape(shape, shape, detwei))
+    end if
+
+    ! calculate dimensionless particle diameter
+    call get_sediment_item(state, i_field, 'submerged_specific_gravity', R)
+    call get_sediment_item(state, i_field, 'diameter', d)
+    call get_option("/physical_parameters/gravity/magnitude", g)
+    ! VISCOSITY ASSUMED TO BE ISOTROPIC - maybe should be in normal direction to surface
+    where (face_val_at_quad(viscosity, surface_element_list(i_ele), 1, 1) > 0.0)
+       d_star = d * ((R*g/(face_val_at_quad(viscosity, surface_element_list(i_ele), 1, 1)**2))**(1./3.))
+    elsewhere
+       d_star = 0.0
+    end where
+
+    !!ewrite(1,*) 'JN - DIMENSIONLESS PARTICLE DIAMETER:', d_star
+
+    ! calculate critical shear stress
+    call get_option(trim(shear_stress%option_path)//"/diagnostic/density", density, stat)
+
+    if (have_option("/material_phase[0]/subgridscale_parameterisations/k-epsilon")) then
+        t_crit_star = (0.30 / (1 + 1.2*d_star)) + 0.055*(1-exp(-0.020*d_star)) !Soulsby (1997)
+    else
+        t_crit_star = 0.05
+    end if
+
+    shear_crit = t_crit_star * density * R * g * d
+
+    !!ewrite(1,*) 'JN - CRITICAL SHEAR STRESS:', shear_crit
+
+    ! get shear stress
+    if (stat /= 0) density = 1.0
+    ! calculate magnitude of shear stress at quadrature points
+    shear_quad = face_val_at_quad(shear_stress, surface_element_list(i_ele))
+    do i_gi = 1, ele_ngi(reentrainment, i_ele)
+       shear(i_gi) = norm2(shear_quad(:, i_gi))
+    end do
+    ! non-dimensionalise shear stress
+    ! shear = shear / density
+
+    !!ewrite(1,*) 'JN - SHEAR STRESS:', shear
+
+    ! calculate reentrainment F*v_s*E
+    E = shape_rhs(shape, face_val_at_quad(volume_fraction, surface_element_list(i_ele)) *&
+         & face_val_at_quad(sink_U, surface_element_list(i_ele)) * (0.015 * d * ((shear/shear_crit)-1)) / (3 * 1.333*d * (d_star ** 0.3))&
+         & * detwei)
+
+    !!ewrite(1,*) 'JN - E value:', E
+    !!ewrite(1,*) 'JN - F', face_val_at_quad(volume_fraction, surface_element_list(i_ele))
+    !!ewrite(1,*) 'JN - SINKING VELOCITY', face_val_at_quad(sink_U, surface_element_list(i_ele))
+    !!ewrite(1,*) 'EXCESS SHIELDS', (shear/shear_crit)-1)
+
+    if(continuity(reentrainment)<0) then
+       ! DG case.
+       E = matmul(invmass, E)
+    end if
+
+    call addto(reentrainment, ele, E)
+
+  end subroutine assemble_vanrijn_1984_reentrainment_ele
 
   subroutine assemble_generic_reentrainment_ele(state, i_field, i_ele, reentrainment,&
        & shear_stress, surface_element_list, x, masslump, sink_U, volume_fraction)
@@ -592,9 +701,14 @@ contains
              end if
              
              ! check at least consistent interpolation option in 'Viscosity' field exists
-             if (.not.(have_option('/material_phase::water/vector_field::Velocity/prognostic/tensor_field::Viscosity/diagnostic/consistent_interpolation'))&
-             .or. (have_option('/material_phase::water/vector_field::Velocity/prognostic/tensor_field::Viscosity/prescribed/consistent_interpolation'))) then
-                ewrite(0,*) "WARNING: using at least consistent interpolation in viscosity field will guarantee erosion rate in calculated in post-adapt step"
+             if(have_option("/material_phase[0]/subgridscale_parameterisations/k-epsilon")) then
+             if (.not.(have_option('/material_phase[0]/vector_field::Velocity/prognostic/tensor_field::Viscosity/diagnostic/consistent_interpolation'))) then
+             ewrite(0,*) "WARNING: using at least consistent interpolation in viscosity field will guarantee erosion rate in calculated in post-adapt step"
+             end if
+             else
+             if (.not. (have_option('/material_phase[0]/vector_field::Velocity/prognostic/tensor_field::Viscosity/prescribed/consistent_interpolation'))) then
+             ewrite(0,*) "WARNING: using at least consistent interpolation in viscosity field will guarantee erosion rate in calculated in post-adapt step"
+             end if
              end if
 
              ! check boundary id's are the same for re-entrainment and bedload
