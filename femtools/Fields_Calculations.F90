@@ -519,6 +519,8 @@ implicit none
       l_norm = CONVERGENCE_INFINITY_NORM
     end if
     
+    !print*, 'JN - name of the field', field%name
+
     assert(field%mesh==nlfield%mesh)
     
     call allocate(difference, field%mesh, "Difference")

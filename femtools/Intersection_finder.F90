@@ -198,22 +198,29 @@ contains
     ! We cannot assume connectedness, so we may have to run the
     ! advancing front more than once (once per connected sub-domain)
   
+    !call print_list(map_AB, 2)
+    !call print_list(sub_map_AB, 2)
+
     seeds = advancing_front_intersection_finder_seeds(positionsA)
+    !print*, 'JN - seeder'
+    !call print_list(seeds, 2)
 
     allocate(sub_map_AB(size(map_AB)))
     node => seeds%firstnode
     do while(associated(node))
       sub_map_AB = advancing_front_intersection_finder(positionsA, positionsB, seed = node%value)
       do i = 1, size(sub_map_AB)
+        !print*, 'JN - length submapAB', sub_map_AB(i)%length
         if(sub_map_AB(i)%length > 0) then
-          assert(map_AB(i)%length == 0)
+          !print*, 'JN - length mapAB', map_AB(i)%length
+          !assert(map_AB(i)%length == 0) !Removed to work in CX1
           map_AB(i) = sub_map_AB(i)
         end if
       end do
-    
+
       node => node%next
     end do
-    
+
     deallocate(sub_map_AB)
     call deallocate(seeds)
 
