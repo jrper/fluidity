@@ -95,7 +95,8 @@ contains
 
           ! extract turbulent viscocity field
           !evisc => extract_scalar_field(state, "ScalarEddyViscosity", stat)
-          tvisc => extract_tensor_field(state, "Viscosity", stat)
+          !tvisc => extract_tensor_field(state, "Viscosity", stat)
+          tvisc => extract_tensor_field(state, "BackgroundViscosity", stat)
 
           ! extract turbulent viscocity field in zero dump
           !if (timestep == 0) then
@@ -250,10 +251,10 @@ contains
 
                     ! compute dimensionless particle diameter
                     !!ewrite(1,*) 'JN - EDDY VISC:', node_val(evisc, globnod_visc)
-                    !d_star = 10.0
+                    d_star = 9.10345 !TEMPORARY CHANGE FOR MATT
                     !d_star = d * ((R*g/(zevisc)**2)**1/3)
                     !d_star = d * ((R*g/(node_val(evisc, globnod_visc))**2)**1/3)
-                    d_star = d * ((R*g/(tvisc_val(i)**2))**1/3)
+                    !d_star = d * ((R*g/(tvisc_val(i)**2))**1/3)
 
                     !!ewrite(1,*) 'JN - DIMENSIONLESS PARTICLE DIAMETER:', d_star
 

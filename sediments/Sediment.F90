@@ -258,7 +258,8 @@ contains
        call set(viscosity, algorithm_viscosity)
        viscosity_pointer => viscosity
     else
-       viscosity_pointer => extract_tensor_field(state, "Viscosity", stat)
+       !viscosity_pointer => extract_tensor_field(state, "Viscosity", stat)
+       viscosity_pointer => extract_tensor_field(state, "BackgroundViscosity", stat)
        if (stat /= 0) then
           FLExit("A viscosity must be specified to calculate reentrainment")
        end if
@@ -498,7 +499,8 @@ contains
     call get_option("/physical_parameters/gravity/magnitude", g)
     ! VISCOSITY ASSUMED TO BE ISOTROPIC - maybe should be in normal direction to surface
     where (face_val_at_quad(viscosity, surface_element_list(i_ele), 1, 1) > 0.0)
-       d_star = d * ((R*g/(face_val_at_quad(viscosity, surface_element_list(i_ele), 1, 1)**2))**(1./3.))
+       !d_star = d * ((R*g/(face_val_at_quad(viscosity, surface_element_list(i_ele), 1, 1)**2))**(1./3.))
+       d_star = 9.10345 !TEMPORARY CHANGE FOR MATT
     elsewhere
        d_star = 0.0
     end where
