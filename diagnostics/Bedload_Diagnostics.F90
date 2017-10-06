@@ -251,7 +251,8 @@ contains
 
                     ! compute dimensionless particle diameter
                     !!ewrite(1,*) 'JN - EDDY VISC:', node_val(evisc, globnod_visc)
-                    d_star = 9.10345 !TEMPORARY CHANGE FOR MATT
+                    d_star = 9.10345 !TEMPORARY CHANGE FOR MATT for 2D case
+                    !d_star = 6.57471 !TEMPORARY CHANGE FOR MATT for 3D case
                     !d_star = d * ((R*g/(zevisc)**2)**1/3)
                     !d_star = d * ((R*g/(node_val(evisc, globnod_visc))**2)**1/3)
                     !d_star = d * ((R*g/(tvisc_val(i)**2))**1/3)
