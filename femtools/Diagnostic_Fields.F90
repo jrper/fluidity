@@ -3156,11 +3156,11 @@ contains
          call get_option("/material_phase[0]/subgridscale_parameterisations/k-epsilon/C_mu", c_mu)
 
          U => extract_vector_field(state, "Velocity")
-         call halo_update(U)
+         !call halo_update(U)
          TKE => extract_scalar_field(state, "TurbulentKineticEnergy")
          call halo_update(TKE)
          evisc => extract_scalar_field(state, "ScalarEddyViscosity")
-         call halo_update(evisc)
+         !call halo_update(evisc)
          snloc = face_loc(U, 1)
          allocate( faceglobalnodes_U(1:snloc) )
          allocate( faceglobalnodes_TKE(1:snloc) )
