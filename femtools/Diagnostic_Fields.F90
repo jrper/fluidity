@@ -3156,8 +3156,11 @@ contains
          call get_option("/material_phase[0]/subgridscale_parameterisations/k-epsilon/C_mu", c_mu)
 
          U => extract_vector_field(state, "Velocity")
+         call halo_update(U)
          TKE => extract_scalar_field(state, "TurbulentKineticEnergy")
+         call halo_update(TKE)
          evisc => extract_scalar_field(state, "ScalarEddyViscosity")
+         call halo_update(evisc)
          snloc = face_loc(U, 1)
          allocate( faceglobalnodes_U(1:snloc) )
          allocate( faceglobalnodes_TKE(1:snloc) )
@@ -3172,11 +3175,12 @@ contains
                 globnod_TKE = faceglobalnodes_TKE(j)
                 globnod_evisc = faceglobalnodes_evisc(j)
                 speed = norm2(node_val(U, globnod_U))
-                friction_velocity = max((speed / yPlus), (sqrt(node_val(TKE, globnod_TKE)) * c_mu**0.25))
+                friction_velocity = max((speed / yPlus), (sqrt(node_val(TKE, globnod_TKE)) * c_mu**0.25))                
                 !friction_velocity = speed / yPlus
                 ! calc wall shear stress: tau_wall = - (u_tau/yPlus)*|u_wall|
                 call set(bed_shear_stress, globnod_U, density*(friction_velocity/yPlus)*node_val(U, globnod_U))
                 !call set(bed_shear_stress, globnod_U, (friction_velocity/node_val(evisc, globnod_evisc))*node_val(U, globnod_U)/yPlus)
+                !call set(bed_shear_stress, globnod_U, (/0.1,0.1,0.1/)) !JN               
             end do
          end do
          deallocate( faceglobalnodes_U )

@@ -378,7 +378,8 @@ subroutine keps_calculate_rhs(state)
 
      ! Check if k and epsilon are on a discontinuous mesh.
      ! It is currently assumed here that both fields are on the same mesh.
-     dg_keps = continuity(u)<0
+     dg_keps = continuity(fields(1))<0
+     !dg_keps = continuity(u)<0
 
      ! Assembly loop
      do ele = 1, ele_count(fields(1))  
@@ -390,9 +391,9 @@ subroutine keps_calculate_rhs(state)
        ! ele is owned.  For example, if ele is the only owned element on
        ! this process.  Hence we have to check for element ownership
        ! directly as well.
-       if ((.not. dg_keps).or.element_neighbour_owned(u, ele).or.element_owned(u, ele)) then
+       if (.not. dg_velocity.or.element_neighbour_owned(u, ele).or.element_owned(u, ele)) then !JN
           if (control_volumes) then
-             call assemble_rhs_cv_ele(src_abs_terms, fields(i), fields(3-i), scalar_eddy_visc, u, &
+             call assemble_rhs_cv_ele(src_abs_terms, fields(i), fields(3-i), scalar_eddy_visc, u, & !JN             
               density, buoyancy_density, have_buoyancy_turbulence, g, g_magnitude, multiphase, &
               vfrac, x, f_1, f_2, ele, i, bc_value, bc_type, compressible)
           else
@@ -400,15 +401,18 @@ subroutine keps_calculate_rhs(state)
               density, buoyancy_density, have_buoyancy_turbulence, g, g_magnitude, multiphase, &
               vfrac, x, f_1, f_2, ele, i, bc_value, bc_type, compressible)
           end if
-       end if
+       end if !JN
      end do
 
      ! halo update to fill in halo_2 values with a dg velocity
-     if (dg_keps) then
+     !JN
+     !if (dg_keps) then !JN
+     if (dg_velocity) then 
        do term = 1, 3
          call halo_update(src_abs_terms(term))
        end do
      end if
+     !JN
 
      ! For non-DG we apply inverse mass globally
      if(continuity(fields(1))>=0) then
@@ -535,6 +539,14 @@ subroutine keps_calculate_rhs(state)
         call addto(src, debug)
      end if
      !-----------------------------------------------------------------------------------
+
+     !JN
+     !if (dg_keps) then
+     !  do term = 1, 3
+     !    call halo_update(src_abs_terms(term))
+     !  end do
+     !end if
+     !JN
 
      ! Deallocate fields
      do term = 1, 3
@@ -768,11 +780,14 @@ subroutine assemble_rhs_ele(src_abs_terms, k, eps, scalar_eddy_visc, u, density,
      grad_u = ele_grad_at_quad(u, ele, dshape_u)
      deallocate(dshape_u)  
   else
-     if(continuity(u)<0) then
+     !JN
+     if(continuity(u)<0) then 
         grad_u = dg_ele_grad_at_quad(u, ele, shape, X, bc_value, bc_type)
      else
         grad_u = ele_grad_at_quad(u, ele, dshape)
      end if
+     !JN     
+     !grad_u = 0.01 !JN
   end if
 
   scalar_eddy_visc_ele = ele_val_at_quad(scalar_eddy_visc, ele)
@@ -1105,6 +1120,8 @@ subroutine keps_eddyvisc(state, advdif)
      call scale(scalar_eddy_visc, filter)
   end if
 
+  !call halo_update(scalar_eddy_visc) - JN
+
   call deallocate(ev_rhs)
   call deallocate(kk)
   call deallocate(eps)
@@ -1248,9 +1265,9 @@ subroutine keps_eddyvisc(state, advdif)
             rhs_addto=ev_min
          end where
       ! Add the element's contribution to the nodes of ev_rh
-         call set(ev_rhs, nodes_ev, rhs_addto)    
-      end if
-      
+         call set(ev_rhs, nodes_ev, rhs_addto)
+         !call set(ev_rhs, nodes_ev, 0.01) !JN    
+      end if  
    
    end subroutine keps_eddyvisc_ele
 
@@ -1715,6 +1732,7 @@ function get_friction_velocity( U , nu, keps_model_in, y, yplus, tke) result (u_
   
   if ( present(tke)) then
      u_tau = max(u_tau, sqrt(sqrt(keps_model%C_mu)*u_tau))
+     !u_tau = 0.01 !JN
   end if
   
   contains 
