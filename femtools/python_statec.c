@@ -83,7 +83,8 @@ void python_reset_(void){
 
     // Create a list of items to  be removed
     PyRun_SimpleString("rem = []");
-    PyRun_SimpleString("for i in globals().keys():\n if(not (i in keep)): rem.append(i)");
+    PyRun_SimpleString("keys = tuple(globals().keys())");
+    PyRun_SimpleString("for i in keys:\n if(not (i in keep)): rem.append(i)");
 
     // Delete every item except the ones we want to keep
     PyRun_SimpleString("for i in rem: del globals()[i]");

@@ -223,7 +223,7 @@ for case in ['A','B','C','D']:
   log_filename = 'MMS_{0}.log'.format(case)
   agree_count = 0
   disagree_count = 0
-  for line in file(log_filename, 'r'):
+  for line in open(log_filename, 'r'):
     if 'MatNullSpaceTest' in line:
       if 'does not think' in line:
         disagree_count += 1

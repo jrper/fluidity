@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
+
 import array
-import exceptions
 import os
 import math
 import fileinput
@@ -324,7 +324,7 @@ for example:
     
       assert(subsample > 0)
 
-      statfile=file(filename, "r")
+      statfile=open(filename, "r")
       header_re=re.compile(r"</header>")
       xml="" # xml header.
 
@@ -382,7 +382,7 @@ for example:
         nOutput = (os.path.getsize(filename + ".dat") / (nColumns * real_size)) / subsample
         
         columns = numpy.empty((nColumns, nOutput))
-        statDatFile = file(filename + ".dat", "rb")   
+        statDatFile = open(filename + ".dat", "rb")   
         index = 0     
         while True:
           values = array.array(realFormat)
@@ -407,10 +407,11 @@ for example:
         columns = [[] for i in range(nColumns)]
         lineNo = 0
         for line in statfile:
-          entries = map(float, line.split())
+          entries = [float(_) for _ in line.split()]
           # Ignore non-sampled lines
           if len(entries) == len(columns) and (lineNo % subsample) == 0:
-            map(list.append, columns, entries)
+            for c,e in zip(columns, entries):
+              c.append(e)
           elif len(entries) != len(columns):
             raise Exception("Incomplete line %d: expected %d, but got %d columns" % (lineNo, len(columns), len(entries)))
           lineNo = lineNo + 1
@@ -424,13 +425,13 @@ for example:
         components=field.getAttribute("components")
 
         if material_phase:
-          if not self.has_key(material_phase):
+          if material_phase not in self:
             self[material_phase]={}
           current_dict=self[material_phase]
         else:
           current_dict=self
 
-        if not current_dict.has_key(name):
+        if name not in current_dict:
           current_dict[name]={}
 
         if components:

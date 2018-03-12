@@ -166,7 +166,7 @@ def generate_dependencies(fortran):
                 this_deps=dependency_list(
                     obj,
                     f,
-                    file(obj+"_dependencies","r").readlines())
+                    open(obj+"_dependencies","r").readlines())
                 
                 # Remove unwanted dependencies
                 for dep in dep_exclusions:
@@ -237,7 +237,7 @@ if __name__=='__main__':
 
         dependencies=generate_dependencies(fortran)
         
-        file("Makefile.dependencies",'w').writelines(dependencies)        
+        open("Makefile.dependencies",'w').writelines(dependencies)        
         
         if options.test:
             if os.path.isfile("Makefile.dependencies"):

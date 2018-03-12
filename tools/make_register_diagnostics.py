@@ -1,12 +1,8 @@
 #!/usr/bin/env python
 import re
 import glob
-# FIXME: (at some later date)
-# Python 2.5 deprecates sha in favour of hashlib, however we support
-# Python versions pre 2.5 and the sha module isn't scheduled to be
-# removed yet, so just use that for now.
-import sha
-import StringIO
+import hashlib
+from io import StringIO
 
 
 # File header
@@ -23,17 +19,17 @@ outfile = 'preprocessor/register_diagnostics.F90'
 # get sha1 digest of existing generated file.  Can't use 'rw' here
 # because it updates the modtime of the file, which we're trying to
 # avoid doing.
-orig=sha.new()
+orig=hashlib.sha1()
 try:
     f=open(outfile, 'r')
-    orig.update(f.read())
+    orig.update(f.read().encode("utf8"))
 except IOError:
     pass
 else:
     f.close()
 
 # Now read module files to generate potential new data
-output=StringIO.StringIO()
+output=StringIO()
 output.write(header)
 
 # List of fortran source files.
@@ -45,7 +41,7 @@ module_list=[]
 
 for filename in fortran_files:
 
-    fortran=file(filename,"r").read()
+    fortran=open(filename,"r").read()
 
     modules=module_re.findall(fortran)
 
@@ -71,8 +67,8 @@ for module in module_list:
 
 output.write(footer)
 
-new=sha.new()
-new.update(output.getvalue())
+new=hashlib.sha1()
+new.update(output.getvalue().encode("utf8"))
 
 # Only write file if sha1sums differ
 if new.digest() != orig.digest():

@@ -142,7 +142,7 @@ def rename_vtu(base_filename, filelist, index, verbose=False):
               print("moving", filelist[i], "to", newfilename)
           shutil.move(filelist[i], newfilename)
           # must also adjust content of pvtu so it points at moved parallel vtus
-          pvtufile = file(newfilename,'r')
+          pvtufile = open(newfilename,'r')
           lines = pvtufile.readlines()
           pvtufile.close()
           for line in range(len(lines)):
@@ -152,7 +152,7 @@ def rename_vtu(base_filename, filelist, index, verbose=False):
               if(len(processorsplit)==2):
                 newline = lines[line][:lineindex]+checkpoint_directory+'/'+base_filename+"_"+str(newindex)+"_"+str(processorsplit[-1])+".vtu"+lines[line][lineindex:].split(".vtu")[-1]
                 lines[line] = newline
-          pvtufile = file(newfilename,'w')
+          pvtufile = open(newfilename,'w')
           pvtufile.writelines(lines)
           pvtufile.close()
 

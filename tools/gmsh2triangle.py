@@ -40,7 +40,7 @@ if argv[0][-4:]!=".msh":
 
 basename=os.path.basename(argv[0][:-4])
 
-mshfile=file(argv[0], 'r')
+mshfile=open(argv[0], 'r')
 
 # Header section
 assert(mshfile.readline().strip()=="$MeshFormat")
@@ -126,8 +126,8 @@ if len(tets)>0:
     node_order=[1, 2, 3, 4]
     elements=tets
     faces=triangles
-    elefile=file(basename+".ele", "w")
-    facefile=file(basename+".face", "w")
+    elefile=open(basename+".ele", "w")
+    facefile=open(basename+".face", "w")
 
 elif len(triangles)>0:
     dim=2
@@ -135,8 +135,8 @@ elif len(triangles)>0:
     node_order=[1, 2, 3]
     elements=triangles
     faces=edges
-    elefile=file(basename+".ele", "w")
-    facefile=file(basename+".edge", "w")
+    elefile=open(basename+".ele", "w")
+    facefile=open(basename+".edge", "w")
 
 elif len(hexes)>0:
     dim=3
@@ -144,8 +144,8 @@ elif len(hexes)>0:
     node_order=[1, 2, 4, 3, 5, 6, 8, 7]
     elements=hexes
     faces=quads
-    elefile=file(basename+".ele", "w")
-    facefile=file(basename+".face", "w")
+    elefile=open(basename+".ele", "w")
+    facefile=open(basename+".face", "w")
 
 elif len(quads)>0:
     dim=2
@@ -153,14 +153,14 @@ elif len(quads)>0:
     node_order=[1, 2, 4, 3]   # don't really know if this is right
     elements=quads
     faces=edges
-    elefile=file(basename+".ele", "w")
-    facefile=file(basename+".edge", "w")
+    elefile=open(basename+".ele", "w")
+    facefile=open(basename+".edge", "w")
 
 else:
     sys.stderr.write("Unable to determine dimension of problem\n")
     sys.exit(1)
 
-nodefile=file(basename+".node", 'w')
+nodefile=open(basename+".node", 'w')
 nodefile.write(str(nodecount)+" "+str(nodefile_dim)+" 0 0\n")
 j=0
 for i in range(nodecount):    

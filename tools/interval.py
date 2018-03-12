@@ -27,6 +27,7 @@
 #    USA
 
 from __future__ import print_function
+
 import sys
 import os
 from numpy import *
@@ -75,7 +76,7 @@ if options.dx:
     right=right+0.01*dx
     nodes=arange(left, right, dx)
 elif options.variable_dx:
-    exec(file(options.variable_dx))
+    exec(open(options.variable_dx))
     nodes=[left]
     while nodes[-1]<(right-float(str(val(right)))):
         nodes.append(nodes[-1]+ float(str(val(nodes[-1]))))
@@ -95,7 +96,7 @@ dim=options.dim
 eles=[(i+1,i+2) for i in range(len(nodes)-1)]
 
 # Write the mesh file in Gmsh format
-meshfile=file(name+".msh", "w")
+meshfile=open(name+".msh", "w")
 
 meshfile.write("""$MeshFormat
 2.2 0 8
@@ -115,7 +116,7 @@ meshfile.write("1 15 2 1 1 1\n")
 meshfile.write("2 15 2 2 %d %d\n" % (len(eles)+1, len(eles)+1))
 
 if options.region_ids:
-    exec(file(options.region_ids))
+    exec(open(options.region_ids))
 else:
     def val(X):
         return 1

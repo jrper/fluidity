@@ -63,8 +63,8 @@ else:
     sys.exit(1)
 
 
-f=file(mesh_name,'r')
-newf=file(mesh_name+'.tmp','w')
+f=open(mesh_name,'r')
+newf=open(mesh_name+'.tmp','w')
 
 flag = 0
 for line in f:

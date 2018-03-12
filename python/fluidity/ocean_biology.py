@@ -192,19 +192,19 @@ def check_lotka_volterra_parameters(parameters):
 
     valid=True
 
-    if not parameters.has_key("alpha"):
+    if not "alpha" in parameters:
         stderr.write("Lotka Voltera parameter alpha missing.\n")
         valid = False
 
-    if not parameters.has_key("beta"):
+    if not "beta" in parameters:
         stderr.write("Lotka Voltera parameter beta missing.\n")
         valid = False
 
-    if not parameters.has_key("gamma"):
+    if not "gamma" in parameters:
         stderr.write("Lotka Voltera parameter gamma missing.\n")
         valid = False
 
-    if not parameters.has_key("delta"):
+    if not "delta" in parameters:
         stderr.write("Lotka Voltera parameter delta missing.\n")
         valid = False
 
